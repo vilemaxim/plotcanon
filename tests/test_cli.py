@@ -135,6 +135,32 @@ class Pov(CommandTest):
         self.assertIn("no entity with id `varen`.  Did you mean: varen-ashcroft", result.stderr)
 
 
+class Sample(CommandTest):
+    def test_write_puts_the_sample_world_on_disk_as_a_valid_world(self):
+        target = self.root / "demo"
+
+        result = self.plotcanon("sample", "--write", "demo")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((target / "canon/campaigns/tideward.md").exists())
+        check = self.plotcanon("validate", "--root", str(target))
+        self.assertIn("48 documents · 0 errors · 0 warnings", check.stdout)
+
+    def test_the_scripted_reports_go_in_a_folder_of_their_own(self):
+        self.plotcanon("sample", "--write", "demo", "--script", "demo-script")
+
+        reports = sorted(p.name for p in (self.root / "demo-script").rglob("*.md"))
+        self.assertEqual(len(reports), 5)
+        self.assertTrue((self.root / "demo-script/script.yml").exists())
+        self.assertFalse(list((self.root / "demo/after-actions").rglob("aa-storm-moon-vigil.md")))
+
+    def test_it_will_not_write_over_a_folder_that_has_things_in_it(self):
+        result = self.plotcanon("sample", "--write", "canon")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("is not empty", result.stderr)
+
+
 class Schema(CommandTest):
     def test_write_is_relative_to_the_root(self):
         result = self.plotcanon("schema", "--write", "schema", "--root", str(self.root),

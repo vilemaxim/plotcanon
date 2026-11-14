@@ -1,0 +1,60 @@
+# The sample World's script: After-Action Reports to submit, in this order, and
+# what each one should do. The report files are under script/, at the path
+# they take in the World.
+#
+#   report      where the report goes in the World
+#   summary     what it is for, in a line
+#   flags       the Mods it should flag: every unfinished Mod that features an
+#               entity one of its canon changes names
+#   interrupts  true if it stops a Mod that has more to play
+#   contradicts other scripted reports that disagree with it about one entity
+
+reports:
+  - report: after-actions/e03-storm-moon/aa-the-tax-collectors-ledger-2.md
+    summary: >-
+      A Mod interrupted for the second time. It changes the smuggler, who is
+      featured by a Mod in the other Campaign, so the Flag crosses Campaigns.
+    interrupts: true
+    flags:
+      - the-tax-collectors-ledger
+      - blood-on-the-salt-stair
+      - a-warrant-for-dunmore
+
+  - report: after-actions/e03-storm-moon/aa-blood-on-the-salt-stair.md
+    summary: >-
+      Says the smuggler died on the stair. Also touches the captain, which
+      reaches a draft still in the inbox.
+    contradicts:
+      - after-actions/e03-storm-moon/aa-storm-moon-vigil.md
+    flags:
+      - the-tax-collectors-ledger
+      - blood-on-the-salt-stair
+      - a-warrant-for-dunmore
+      - the-guildmasters-daughter
+
+  - report: after-actions/e03-storm-moon/aa-storm-moon-vigil.md
+    summary: >-
+      Run at the same hour, and says the smuggler rowed away alive. The two
+      reports cannot both be approved as they stand.
+    contradicts:
+      - after-actions/e03-storm-moon/aa-blood-on-the-salt-stair.md
+    flags:
+      - the-tax-collectors-ledger
+      - blood-on-the-salt-stair
+      - a-warrant-for-dunmore
+      - storm-moon-vigil
+      - what-the-keeper-saw
+      - the-bell-beneath
+
+  - report: after-actions/e03-storm-moon/aa-storm-moon-vigil-2.md
+    summary: >-
+      A second report on the same Mod at the same Event. It names only people
+      whom no unfinished Mod features, so it flags nothing.
+    flags: []
+
+  - report: after-actions/e04-second-lantern/aa-what-the-keeper-saw.md
+    summary: >-
+      From the other Campaign. The keeper dies in the Mod that needed him, so
+      the only Mod it flags is its own.
+    flags:
+      - what-the-keeper-saw

@@ -6,6 +6,7 @@
     plotcanon validate --quiet          # findings only, no summary
     plotcanon pov varen-ashcroft        # everything canon records about one entity
     plotcanon schema --write schema/    # copy the schema docs into a World
+    plotcanon sample --write demo/      # copy the sample World to disk
 
 Every command takes `--root DIR` to work on a World somewhere else. Paths given
 to `validate` are relative to where you are; `--write` is relative to the root.
@@ -19,10 +20,13 @@ import argparse
 import json
 import subprocess
 import sys
+from importlib import resources
 from pathlib import Path
 
 from . import _pov
-from ._api import Finding, WARNING, load_world, read_directory, schema_files
+from ._api import (
+    Finding, WARNING, load_world, read_directory, sample_script, sample_world, schema_files,
+)
 
 VOCAB_FILE = "vocabularies.yml"
 
@@ -125,6 +129,31 @@ def schema(args):
     return 0
 
 
+def write_into_empty(target, files):
+    """Write `{relative path: text}` under a folder, which must not already
+    hold anything."""
+    if target.exists() and any(target.iterdir()):
+        raise UsageError(f"{target} is not empty; choose a new folder for the sample")
+    for path, text in files.items():
+        (target / path).parent.mkdir(parents=True, exist_ok=True)
+        (target / path).write_text(text, encoding="utf-8")
+
+
+def sample(args):
+    """Copy the sample World to disk, and optionally its scripted reports."""
+    world = Path(args.root) / args.write
+    write_into_empty(world, sample_world())
+    print(f"wrote the sample World to {world}/")
+    if args.script:
+        script = Path(args.root) / args.script
+        scripted = {report.path: report.text for report in sample_script()}
+        scripted["script.yml"] = (resources.files("plotcanon")
+                                  .joinpath("sample", "script.yml").read_text(encoding="utf-8"))
+        write_into_empty(script, scripted)
+        print(f"wrote {len(scripted) - 1} scripted reports and script.yml to {script}/")
+    return 0
+
+
 def main(argv=None):
     from . import __version__
 
@@ -147,7 +176,14 @@ def main(argv=None):
     s.add_argument("--write", metavar="DIR", help="write the schema files into DIR")
     s.set_defaults(run=schema)
 
-    for parser in (v, p, s):
+    d = sub.add_parser("sample", help="copy the sample World to disk")
+    d.add_argument("--write", metavar="DIR", required=True,
+                   help="a new or empty folder for the sample World")
+    d.add_argument("--script", metavar="DIR",
+                   help="also write the scripted reports, into this new or empty folder")
+    d.set_defaults(run=sample)
+
+    for parser in (v, p, s, d):
         parser.add_argument("--root", default=".", help="the World's directory (default: here)")
 
     args = ap.parse_args(argv)

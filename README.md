@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.1.0"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.2.0"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.1.0"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.2.0"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -59,6 +59,10 @@ Errors mean the file is not valid. Warnings are for a person to judge and do not
 | `load_world(source, *, head=None)` | Parse and validate a whole World. Returns a `Report`; `report.world` is set when there are no errors. |
 | `check_file(world, path, text)` | Validate one file against a World. Returns a `Report`; `report.document` is set when the file has no errors. |
 | `read_directory(directory)` | Read a World's files from disk into `{path: text}`. |
+| `flags(world, report)` | The Flags a report raises: one for each unfinished Mod and each canon change that names one of its Features. |
+| `flagged_mods(world, report)` | The ids of those Mods, each once. |
+| `sample_world()` | A ready-made World, as `{path: text}`. |
+| `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
 | `vocabularies()` | The allowed values for every enum field. |
 | `schema_files()` | The schema docs and `vocabularies.yml`, as shipped. |
 
@@ -70,6 +74,7 @@ plotcanon validate canon/npcs/x.md   # report only on these paths
 plotcanon validate --strict          # treat warnings as errors
 plotcanon pov varen-ashcroft         # everything canon records about one entity
 plotcanon schema --write schema/     # copy the schema docs into a World
+plotcanon sample --write demo/       # copy the sample World to disk
 ```
 
 Add `--root DIR` to work on a World somewhere else. `validate` exits 0 when the World is clean, 1 when it has errors (or warnings, with `--strict`), and 2 when the command could not run.
@@ -78,7 +83,51 @@ Add `--root DIR` to work on a World somewhere else. `validate` exits 0 when the 
 
 The document types, their fields and the fixed body headings are described in [`src/plotcanon/schema/`](src/plotcanon/schema/), one file per type. The allowed values for every enum field are in [`vocabularies.yml`](src/plotcanon/schema/vocabularies.yml), which is the single source of truth. These files ship inside the package.
 
-[`examples/`](examples/) holds a small sample World that the tests validate.
+## Flags
+
+A report proposes canon changes. Each change puts in question every unfinished Mod that features the entity it changes, in any Campaign of the World. Unfinished means the Mod still has play ahead of it: a draft, an approved Mod, or one in progress. A finished or shelved Mod is never flagged.
+
+```python
+report = plotcanon.check_file(world, path, text)
+plotcanon.flagged_mods(world, report.document)   # ["a-warrant-for-dunmore", ...]
+
+for flag in plotcanon.flags(world, report.document):
+    flag.mod, flag.entity, flag.change           # which Mod, which Feature, which change
+```
+
+Three points about the rule:
+
+- The report's own Mod is flagged too when it has more to play, because what happened so far may change the rest of it.
+- A proposed or approved change raises Flags; a rejected one raises none, since it did not happen.
+- Only the entity a change names counts. When an NPC moves, the place they moved to is not treated as changed.
+
+## The sample World
+
+The package ships a World to test against and to give a new user: the Brackwater coast, with two Campaigns, four Events, twelve NPCs, three factions, three Plots and eleven Mods in every state. Some play has already been reported and approved.
+
+```python
+world = plotcanon.load_world(plotcanon.sample_world()).world
+
+for scripted in plotcanon.sample_script():
+    report = plotcanon.check_file(world, scripted.path, scripted.text)
+    assert plotcanon.flagged_mods(world, report.document) == sorted(scripted.flags)
+```
+
+`sample_script()` is five After-Action Reports to submit in order. Between them they cover the cases worth testing:
+
+| Report | What it shows |
+|---|---|
+| `aa-the-tax-collectors-ledger-2` | A Mod interrupted for the second time, and a Flag that crosses into the other Campaign. |
+| `aa-blood-on-the-salt-stair` | Says an NPC died. Also flags a draft still in the inbox. |
+| `aa-storm-moon-vigil` | Run at the same hour, and says the same NPC left alive. The two contradict each other. |
+| `aa-storm-moon-vigil-2` | A second report on one Mod at one Event. It flags nothing. |
+| `aa-what-the-keeper-saw` | From the other Campaign. The only Mod it flags is its own. |
+
+To get the files on disk, for a larp-llm repo or to read them, run `plotcanon sample --write demo/ --script demo-script/`.
+
+The files are in [`src/plotcanon/sample/`](src/plotcanon/sample/): the World under `world/`, the reports under `script/`, and what each report should do in [`script.yml`](src/plotcanon/sample/script.yml). Every scripted change is `proposed`, and none of the reports is in the World until you submit it.
+
+[`examples/`](examples/) holds a much smaller World of seven files, which the rule tests change a little at a time.
 
 ## Develop
 

@@ -144,5 +144,12 @@ mod_state_dirs:
   finished:    ['mods/<campaign>']
   shelved:     [mods/shelved]
 
+# States in which a mod still has play ahead of it. A canon change flags every
+# mod in one of these states that features the entity it changes.
+mod_states_unfinished: [draft, approved, in-progress]
+
+# A change with one of these decisions flags nothing: it did not happen.
+canon_change_decisions_raising_no_flag: [rejected]
+
 # States that mean the mod has been played, so it must list at least one event.
 mod_states_that_have_run: [in-progress, finished]

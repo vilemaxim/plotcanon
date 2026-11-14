@@ -10,6 +10,8 @@ from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
 
+import yaml
+
 from . import _checks
 
 ERROR = "error"
@@ -204,6 +206,141 @@ def check_file(world, path, text):
                     errors += (clash,)
     document = _document(parsed) if parsed is not None and not errors else None
     return Report(errors, warnings, document=document, document_count=1 if parsed else 0)
+
+
+@dataclass(frozen=True)
+class Flag:
+    """One reason a Mod is in question: a canon change touched one of its
+    Features.
+
+    `mod` is the Mod's id. `entity` is the Feature the change names. `change`
+    is the position of that change in the report's `canon_changes` list,
+    counting from 0.
+    """
+
+    mod: str
+    entity: str
+    change: int
+
+
+def flags(world, report):
+    """The Flags a report's canon changes raise.
+
+    A canon change flags every unfinished Mod that features the entity it
+    changes, in any Campaign of the World. Unfinished means the Mod still has
+    play ahead of it: not finished and not shelved. That includes the report's
+    own Mod when it has more to play, since what happened so far may affect
+    the rest of it.
+
+    A Flag is raised when a change is proposed and stands once it is approved;
+    it is for a person to dismiss. A rejected change did not happen, so it
+    raises none. Only the entity a change names counts: for a change of
+    location or affiliation, the place or faction moved from or to does not.
+
+    `world` is a `World`. `report` is an After-Action Report: either its
+    `Document` or the `Report` that `check_file` returned for it. Returns a
+    list of `Flag`, ordered by Mod id and then by the change's position.
+    """
+    if isinstance(report, Report):
+        if report.document is None:
+            raise TypeError("that report has errors, so it has no document to work from")
+        report = report.document
+    vocab = _checks.load_vocab()
+    unfinished = vocab["mod_states_unfinished"]
+    not_raising = vocab["canon_change_decisions_raising_no_flag"]
+    changes = report.fields.get("canon_changes")
+    raised = []
+    for mod in world.of_type("mod"):
+        if mod.fields.get("state") not in unfinished:
+            continue
+        features = mod.fields.get("features")
+        featured = {entity for entities in (features.values() if isinstance(features, Mapping) else [])
+                    if isinstance(entities, list) for entity in entities if isinstance(entity, str)}
+        for position, change in enumerate(changes if isinstance(changes, list) else []):
+            if not isinstance(change, Mapping) or change.get("decision") in not_raising:
+                continue
+            entity = change.get("entity")
+            if isinstance(entity, str) and entity in featured:
+                raised.append(Flag(mod.id, entity, position))
+    return sorted(raised, key=lambda flag: (flag.mod, flag.change))
+
+
+def flagged_mods(world, report):
+    """The ids of the Mods a report flags, in alphabetical order, each once.
+    See `flags` for the rule."""
+    return sorted({flag.mod for flag in flags(world, report)})
+
+
+@dataclass(frozen=True)
+class ScriptedReport:
+    """One After-Action Report from the sample World's script.
+
+    `path` is where the report goes in the World and `text` is the file.
+    `flags` are the ids of the Mods it should flag. `contradicts` are the paths
+    of other scripted reports that disagree with it about the same entity.
+    `interrupts` is true when the report stops a Mod that has more to play.
+    """
+
+    path: str
+    text: str
+    summary: str
+    flags: tuple = ()
+    contradicts: tuple = ()
+    interrupts: bool = False
+
+
+def _sample_files(folder):
+    """Every markdown file under one folder of the packaged sample, as
+    `{path relative to that folder: text}`."""
+    files = {}
+
+    def walk(node, prefix):
+        for item in sorted(node.iterdir(), key=lambda i: i.name):
+            if item.is_dir():
+                walk(item, f"{prefix}{item.name}/")
+            elif item.name.endswith(".md"):
+                files[f"{prefix}{item.name}"] = item.read_text(encoding="utf-8")
+
+    walk(resources.files("plotcanon").joinpath("sample", folder), "")
+    return files
+
+
+def sample_world():
+    """A small World to test against and to give a new user: two Campaigns,
+    four Events, a dozen NPCs, three factions, three Plots and eleven Mods in
+    every state, with some play already reported and approved.
+
+    Returns `{path: text}`, ready for `load_world`. Each call returns a fresh
+    copy.
+    """
+    return _sample_files("world")
+
+
+def sample_script():
+    """After-Action Reports to submit to the sample World, in order, each with
+    the Mods it should flag. None of them is in `sample_world()`.
+
+    Returns a list of `ScriptedReport`. Check one with
+    `check_file(world, scripted.path, scripted.text)`.
+    """
+    reports = _sample_files("script")
+    manifest = yaml.safe_load(resources.files("plotcanon").joinpath(
+        "sample", "script.yml").read_text(encoding="utf-8"))
+    listed = [entry["report"] for entry in manifest["reports"]]
+    if sorted(listed) != sorted(reports):
+        raise RuntimeError("the sample script is inconsistent: script.yml lists "
+                           f"{sorted(listed)} but the report files are {sorted(reports)}")
+    return [
+        ScriptedReport(
+            path=entry["report"],
+            text=reports[entry["report"]],
+            summary=entry["summary"],
+            flags=tuple(entry.get("flags") or ()),
+            contradicts=tuple(entry.get("contradicts") or ()),
+            interrupts=bool(entry.get("interrupts", False)),
+        )
+        for entry in manifest["reports"]
+    ]
 
 
 def vocabularies():
