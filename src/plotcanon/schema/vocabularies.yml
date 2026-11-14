@@ -1,0 +1,148 @@
+# Controlled vocabularies — the single source of truth.
+#
+# The plotcanon validator reads this file. The schema docs, and the projects
+# that use plotcanon, point here rather than restating values, so there is
+# exactly one place to change.
+#
+# Adding a value: add it here, then say what it MEANS in the schema doc for the
+# type that uses it. A value nobody can define is a value authors will misuse.
+# Removing a value: grep canon/ first — the validator will fail every file still
+# using it, which is the point, but do it deliberately.
+
+vocabularies:
+
+  # ── Entity status ─────────────────────────────────────────────────────────
+  # Always read together with the entity's `as_of` field: status is a claim
+  # about a specific event, not about "now".
+
+  npc_status:
+    alive:        Present in the world and usable in a mod without explanation.
+    dead:         Dead by means the setting can reverse. Usable, but a mod must explain the return.
+    final-death:  Beyond return. Usable only in flashback or as a corpse.
+    missing:      Canon does not know where they are. Their reappearance is itself plot.
+    departed:     Alive and elsewhere. Usable with a travel justification.
+    unknown:      Canon has not established this. Ask; do not assume.
+
+  faction_status:
+    active:       Operating and able to act as a body.
+    dormant:      Intact but not currently acting.
+    fractured:    Still exists but no longer acts with one voice.
+    disbanded:    Dissolved. Individual members may persist.
+    unknown:      Canon has not established this.
+
+  plot_status:
+    open:         Live and being advanced by current plot.
+    dormant:      Not closed, but nothing is currently advancing it. Free to pick up.
+    resolved:     Concluded in canon. Reopening it is a deliberate act, not an oversight.
+    abandoned:    Dropped. Will not conclude. Do not build on it.
+
+  location_status:
+    intact:       Standing and functioning as described.
+    contested:    Control is actively disputed.
+    ruined:       Damaged or destroyed but still a place you can go.
+    lost:         Inaccessible, sunk, sealed, or off the map.
+    unknown:      Canon has not established this.
+
+  event_status:
+    planned:      Scheduled but not yet run.
+    running:      Currently underway.
+    complete:     Ran. After-actions may or may not be ingested yet.
+    cancelled:    Did not happen. Keeps its ordinal so the sequence stays gapless.
+
+  # ── Document lifecycle ────────────────────────────────────────────────────
+
+  # A mod's state must agree with the directory it sits in — see
+  # `mod_state_dirs` below. Changing a mod's state can mean a `git mv`.
+  mod_state:
+    draft:        Being written or revised. Not approved to run. Lives in inbox/. NOT canon.
+    approved:     Accepted by the Plot Master and ready to run.
+    in-progress:  Run at least once and not finished. More play is expected.
+    finished:     Run to its end. Nothing is left to play.
+    shelved:      Pulled, or never ran and won't.
+
+  # Applies to every entity file. This is what makes "propose, don't overwrite"
+  # mechanical: an agent may create a `proposed` file; only a human promotes it.
+  canon:
+    proposed:     Created by an agent or author, awaiting human approval.
+    approved:     Canon. Authors may rely on it.
+    deprecated:   Superseded or retired. Kept for history; do not build on it.
+
+  visibility:
+    public:       Safe to show anyone, including players.
+    player-known: Players have learned this in play. Not a secret, not public lore.
+    gm-only:      Plot team only. Never include in anything handed outside the team.
+
+  period_type:
+    event:        A game event.
+    interlude:    A between-event period — downtime, off-event actions, letters.
+
+  # ── Canon changes ─────────────────────────────────────────────────────────
+
+  canon_change_kind:
+    status:       An entity's status field changed. Requires from/to.
+    location:     An entity's location changed. Requires from/to.
+    affiliation:  An entity's faction membership changed. Requires from/to.
+    relationship: How an entity stands with someone changed. Prose only.
+    knowledge:    An entity learned or revealed something. Prose only.
+    narrative:    Anything else worth recording about this entity. Prose only.
+    created:      This entity first entered canon here. Prose only.
+
+  # Every canon change carries a decision. Only the Plot Master sets anything
+  # other than `proposed`.
+  canon_change_decision:
+    proposed:     Reported, not yet decided. Not canon.
+    approved:     Accepted into canon. The entity's file must agree with it.
+    rejected:     Turned down. Kept for the record; never applied.
+
+  # ── Timeline ──────────────────────────────────────────────────────────────
+
+  # SETTING-SPECIFIC — replace these with your own eras. They order pre-campaign
+  # material relative to each other; campaign events use `ordinal` instead.
+  era:
+    ancient:        Myth and deep history. Dates unreliable by design.
+    founding:       When the current order of things was established.
+    recent-history: Within living memory, before the campaign began.
+
+
+# ── Machine-readable bindings ───────────────────────────────────────────────
+# Which vocabulary governs which field, per document type. The validator uses
+# this; do not duplicate the values themselves here.
+
+bindings:
+  npc:          {status: npc_status,       canon: canon, visibility: visibility}
+  faction:      {status: faction_status,   canon: canon, visibility: visibility}
+  plot:         {status: plot_status,      canon: canon, visibility: visibility}
+  location:     {status: location_status,  canon: canon, visibility: visibility}
+  pc:           {canon: canon,             visibility: visibility}
+  campaign:     {}
+  event:        {status: event_status,     period_type: period_type}
+  timeline:     {canon: canon,             visibility: visibility, era: era}
+  mod:          {state: mod_state,         canon: canon, visibility: visibility}
+  after-action: {}
+
+# The decision that makes a canon change part of canon. Only changes with this
+# decision are expected to match the entity's file.
+canon_change_decision_in_canon: approved
+
+# Canon change kinds that assert a field transition and therefore require
+# `from`/`to`. The from/to values are checked against the TARGET entity's own
+# vocabulary, resolved through `bindings` above.
+canon_change_transition_kinds: [status, location, affiliation]
+
+# Which entity field each transition kind moves.
+canon_change_kind_fields:
+  status:      status
+  location:    location
+  affiliation: factions
+
+# Mod `state` must agree with the directory the file sits in.
+# `<campaign>` is the mod's own `campaign`, an id in canon/campaigns/.
+mod_state_dirs:
+  draft:       [inbox]
+  approved:    ['mods/<campaign>']
+  in-progress: ['mods/<campaign>']
+  finished:    ['mods/<campaign>']
+  shelved:     [mods/shelved]
+
+# States that mean the mod has been played, so it must list at least one event.
+mod_states_that_have_run: [in-progress, finished]

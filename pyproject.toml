@@ -1,0 +1,17 @@
+[project]
+name = "plotcanon"
+version = "0.1.0"
+description = "The shared file format for RPG plot canon: parse and validate a World's markdown files."
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Jeffrey Brite" }]
+requires-python = ">=3.12"
+dependencies = ["PyYAML>=6.0"]
+
+[project.scripts]
+plotcanon = "plotcanon.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
