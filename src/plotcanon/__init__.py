@@ -18,6 +18,7 @@ The document types and their fields are described in the files under
 from importlib.metadata import version as _version
 
 from ._wording import avoided_words
+from ._story import Contest, Exit, Passage, Section, Story, story
 from ._references import Reference, name_of, references, referrers, vocabulary_fields
 from ._api import (
     Document,
@@ -25,7 +26,9 @@ from ._api import (
     Flag,
     Report,
     ScriptedReport,
+    WORLD_SETTINGS_FILE,
     World,
+    WorldSettings,
     check_file,
     flagged_mods,
     flags,
@@ -35,18 +38,26 @@ from ._api import (
     sample_world,
     schema_files,
     vocabularies,
+    world_settings,
 )
 
 __version__ = _version("plotcanon")
 
 __all__ = [
+    "Contest",
     "Document",
+    "Exit",
     "Finding",
     "Flag",
+    "Passage",
     "Report",
     "Reference",
     "ScriptedReport",
+    "Section",
+    "Story",
+    "WORLD_SETTINGS_FILE",
     "World",
+    "WorldSettings",
     "avoided_words",
     "check_file",
     "flagged_mods",
@@ -59,7 +70,9 @@ __all__ = [
     "sample_script",
     "sample_world",
     "schema_files",
+    "story",
     "vocabularies",
     "vocabulary_fields",
+    "world_settings",
     "__version__",
 ]

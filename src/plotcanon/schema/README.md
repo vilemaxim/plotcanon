@@ -23,6 +23,28 @@ which is the single source of truth. These docs deliberately do not restate them
 **The repo is one world.** Events and mods belong to a campaign; every other
 type belongs to the world and is shared by all its campaigns.
 
+## The World's settings: `world.yml`
+
+A World's settings live in one YAML file, `world.yml`, at its root. It is
+optional; every setting has a default, used when the file or that entry in it is
+absent. It is part of the World's files, so it is exported and imported with
+them.
+
+```yaml
+dry_run_structure: "encouraged"   # off | encouraged | required
+```
+
+| Setting | Values | Default | Meaning |
+|---|---|---|---|
+| `dry_run_structure` | `enum:dry_run_structure` | `encouraged` | How strictly mods are held to the Dry Run convention. See [mod.md](mod.md#the-dry-run-convention--where-each-part-of-the-story-leads). |
+
+Quote `"off"`: YAML reads a bare `off` as false. The validator takes false to
+mean `off` all the same. An unknown setting, or a value not in the vocabulary,
+is an error on `world.yml`.
+
+Only what belongs to the World goes here. Who may do what, and anything about
+an Organization, lives in the app that hosts the World and never in its files.
+
 ---
 
 ## Conventions that apply to every document

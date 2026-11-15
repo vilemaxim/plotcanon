@@ -74,20 +74,48 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 
 | Function | What it does |
 |---|---|
-| `load_world(source, *, head=None)` | Parse and validate a whole World. Returns a `Report`; `report.world` is set when there are no errors. |
-| `check_file(world, path, text)` | Validate one file against a World. Returns a `Report`; `report.document` is set when the file has no errors. |
-| `read_directory(directory)` | Read a World's files from disk into `{path: text}`. |
+| `load_world(source, *, head=None, dry_run_structure=None)` | Parse and validate a whole World. Returns a `Report`; `report.world` is set when there are no errors. `dry_run_structure` overrides the World's setting. |
+| `check_file(world, path, text, *, dry_run_structure=None)` | Validate one file against a World. Returns a `Report`; `report.document` is set when the file has no errors. |
+| `read_directory(directory)` | Read a World's files from disk into `{path: text}`: its documents and its `world.yml`. |
 | `flags(world, report)` | The Flags a report raises: one for each unfinished Mod and each canon change that names one of its Features. |
 | `flagged_mods(world, report)` | The ids of those Mods, each once. |
 | `references(document)` | The values in a document that name other documents, each a `Reference` with its field, the id and its place. A value in any other field (a Mod Writer's handle, a date) is never one. |
 | `referrers(world, document)` | The documents in a World that refer to a document (or an id). |
 | `name_of(world, document)` | What to call a document on a page: its title, its first alias, or for a report its Mod and Event. |
 | `vocabulary_fields(document)` | Which of a document's fields hold a value from a vocabulary, and which vocabulary. |
+| `story(mod)` | A Mod's story by the Dry Run convention, as a `Story`: its start, passages, exits, Contests and endings, and why a Dry Run cannot be built from it, if it cannot. Takes a Mod's `Document` or its text. |
+| `world_settings(source)` | A World's settings from its `world.yml`, as `WorldSettings`. `world.settings` gives the same for a loaded World. |
 | `sample_world()` | A ready-made World, as `{path: text}`. |
 | `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
 | `vocabularies()` | The allowed values for every enum field. |
 | `avoided_words(text)` | Uses in a text of words the shared glossary says to avoid, each with the term to use instead. For checking docs and prompts. |
 | `schema_files()` | The schema docs and `vocabularies.yml`, as shipped. |
+
+## Dry Runs
+
+A Dry Run is a playable, branching version of a Mod. Its Hooks, scenes, Contests and Possible Outcomes say where each leads, by the convention in [`schema/mod.md`](src/plotcanon/schema/mod.md), and `story` reads that into a graph, so nothing else has to parse the markdown:
+
+```python
+told = plotcanon.story(world.get("the-bell-beneath"))
+
+if told.playable:
+    here = told.start                     # the Premise; its exits are the Hooks
+    here.prose                            # its text, without the links
+    for choice in here.choices:           # exits, then each Contest's results
+        choice.label, choice.passage      # "The sister asks them...", "The descent"
+    here = told.passage(choice.passage)   # kind is "start", "scene" or "ending"
+else:
+    print("\n".join(told.problems))       # why not, to paste into an LLM
+```
+
+`told.sections` is the whole body section by section, exactly as written, for converting it to another format.
+
+How strictly a World's Mods are held to the convention is its **Dry Run structure** setting, in `world.yml` at the World's root: `off`, `encouraged` (the default: the checks are warnings) or `required` (the checks are errors, and so is a Mod with no structure). `load_world`, `check_file` and `plotcanon validate` all follow it.
+
+```python
+world.settings.dry_run_structure                  # "encouraged"
+plotcanon.WorldSettings(dry_run_structure="required").text()   # the file to write
+```
 
 ## Use it from the command line
 
@@ -127,7 +155,7 @@ Three points about the rule:
 
 ## The sample World
 
-The package ships a World to test against and to give a new user: the Brackwater coast, with two Campaigns, four Events, twelve NPCs, three factions, three Plots and eleven Mods in every state. Some play has already been reported and approved.
+The package ships a World to test against and to give a new user: the Brackwater coast, with two Campaigns, four Events, twelve NPCs, three factions, three Plots and eleven Mods in every state. Some play has already been reported and approved. One Mod, `the-bell-beneath`, is written for a Dry Run.
 
 ```python
 world = plotcanon.load_world(plotcanon.sample_world()).world

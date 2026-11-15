@@ -13,7 +13,8 @@ from types import MappingProxyType
 
 import yaml
 
-from . import _checks
+from . import _checks, _settings
+from ._settings import WORLD_SETTINGS_FILE, WorldSettings
 
 ERROR = "error"
 WARNING = "warning"
@@ -63,6 +64,12 @@ class World:
         """Every document of one type, such as "npc" or "mod", in path order."""
         return [d for d in self.documents if d.type == doc_type]
 
+    @property
+    def settings(self):
+        """The World's settings, from `world.yml` in its files, as
+        `WorldSettings`."""
+        return world_settings(self)
+
 
 @dataclass(frozen=True)
 class Report:
@@ -101,12 +108,19 @@ def read_directory(directory):
     """Read a World's files from a directory into `{relative path: text}`.
 
     Only the files that make up the World are read: markdown under the scanned
-    top-level folders. Paths use forward slashes whatever the platform.
+    top-level folders, and the World's settings in `world.yml` at its root.
+    Paths use forward slashes whatever the platform.
     """
     root = Path(directory)
     if not root.is_dir():
         raise NotADirectoryError(f"no World directory at {root}")
     files = {}
+    settings = root / WORLD_SETTINGS_FILE
+    if settings.is_file():
+        try:
+            files[WORLD_SETTINGS_FILE] = settings.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise ValueError(f"{WORLD_SETTINGS_FILE} is not UTF-8 text") from None
     for top in _checks.SCAN_DIRS:
         for path in sorted((root / top).rglob("*.md")):
             if not path.is_file():
@@ -153,13 +167,13 @@ def _document(doc):
 THE_WORLD = "(the World)"
 
 
-def _checked(files, head=None):
+def _checked(files, head=None, dry_run_structure=None):
     """Run every check. The checks are written not to raise whatever a file
     holds, and are tested for it. Should one raise all the same, that is
     reported as a finding about the World, so that a caller taking files from
     strangers is never handed an exception for something in a file."""
     try:
-        return _checks.run_checks(files, head)
+        return _checks.run_checks(files, head, dry_run_structure)
     except MemoryError:
         raise  # Not something in a file to report: the machine is out of memory.
     except Exception as error:  # noqa: BLE001 - the last resort, by design
@@ -180,30 +194,40 @@ def _findings(raw, only=None):
     return errors, warnings
 
 
-def load_world(source, *, head=None):
+def load_world(source, *, head=None, dry_run_structure=None):
     """Parse and validate a whole World.
 
     `source` is a directory, or a mapping of each file's path (relative to the
     World's root, forward slashes) to its text. `head` is the World's current
     git commit, if it has one; it is only used to spot stale generated files.
+    `dry_run_structure` ("off", "encouraged" or "required"), when given, is
+    used instead of the setting in the World's `world.yml`.
 
     Returns a `Report`. `report.world` is the parsed World when there are no
     errors, and None otherwise.
     """
     files = _files_of(source)
-    docs, _by_id, raw = _checked(files, head)
+    _check_structure(dry_run_structure)
+    docs, _by_id, raw = _checked(files, head, dry_run_structure)
     errors, warnings = _findings(raw)
     world = None if errors else World([_document(d) for d in docs], files)
     return Report(errors, warnings, world=world, document_count=len(docs))
 
 
-def check_file(world, path, text):
+def _check_structure(dry_run_structure):
+    if dry_run_structure is not None:
+        WorldSettings(dry_run_structure)  # raises ValueError for anything else
+
+
+def check_file(world, path, text, *, dry_run_structure=None):
     """Validate one file, such as a submitted Mod or After-Action Report,
     against a World.
 
     `world` is a `World`, a directory or a `{path: text}` mapping. `path` is
     where the file would sit in the World, such as `inbox/the-ashen-vigil.md`;
     it replaces any file already there. The World itself is not changed.
+    A Mod is held to the Dry Run convention as the World's `world.yml` says,
+    or as `dry_run_structure` says when it is given.
 
     Returns a `Report` holding only the findings about that file.
     `report.document` is the parsed file when it has no errors.
@@ -215,9 +239,10 @@ def check_file(world, path, text):
         folders = ", ".join(f"{d}/" for d in _checks.SCAN_DIRS)
         return Report((Finding(ERROR, path, "not a document path — a World's documents "
                                             f"are .md files under {folders}"),))
+    _check_structure(dry_run_structure)
     files = _files_of(world)
     files[path] = text
-    docs, _by_id, raw = _checked(files)
+    docs, _by_id, raw = _checked(files, dry_run_structure=dry_run_structure)
     errors, warnings = _findings(raw, only=path)
     parsed = next((d for d in docs if d.rel == path), None)
     # A clash of ids is reported on whichever file sorts later. Here it is
@@ -322,15 +347,15 @@ class ScriptedReport:
 
 
 def _sample_files(folder):
-    """Every markdown file under one folder of the packaged sample, as
-    `{path relative to that folder: text}`."""
+    """Every markdown file under one folder of the packaged sample, and its
+    `world.yml`, as `{path relative to that folder: text}`."""
     files = {}
 
     def walk(node, prefix):
         for item in sorted(node.iterdir(), key=lambda i: i.name):
             if item.is_dir():
                 walk(item, f"{prefix}{item.name}/")
-            elif item.name.endswith(".md"):
+            elif item.name.endswith(".md") or f"{prefix}{item.name}" == WORLD_SETTINGS_FILE:
                 files[f"{prefix}{item.name}"] = item.read_text(encoding="utf-8")
 
     walk(resources.files("plotcanon").joinpath("sample", folder), "")
@@ -340,7 +365,9 @@ def _sample_files(folder):
 def sample_world():
     """A small World to test against and to give a new user: two Campaigns,
     four Events, a dozen NPCs, three factions, three Plots and eleven Mods in
-    every state, with some play already reported and approved.
+    every state, with some play already reported and approved. One Mod,
+    `the-bell-beneath`, is written for a Dry Run, and `world.yml` sets the
+    Dry Run structure to `encouraged`.
 
     Returns `{path: text}`, ready for `load_world`. Each call returns a fresh
     copy.
@@ -389,3 +416,11 @@ def schema_files():
     return {item.name: item.read_text(encoding="utf-8")
             for item in sorted(folder.iterdir(), key=lambda i: i.name)
             if item.name.endswith((".md", ".yml"))}
+
+
+def world_settings(source):
+    """A World's settings, from the `world.yml` at its root, as
+    `WorldSettings`. `source` is a directory, a `{path: text}` mapping or a
+    `World`. With no `world.yml`, or none that can be read, every setting is
+    its default; `load_world` reports what is wrong with the file."""
+    return _settings.read(_files_of(source), _checks.Findings())

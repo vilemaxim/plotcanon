@@ -1161,14 +1161,41 @@ def check_generated_freshness(gen, head, f):
                             f"stale, regenerate before relying on it")
 
 
-def run_checks(files, head=None):
+def check_dry_runs(docs, structure, f):
+    """Each Mod's story against the Dry Run convention, at the World's
+    strictness: none when `off`; warnings when `encouraged`, and only for a
+    Mod that uses the convention at all; errors when `required`, including for
+    a Mod with no structure."""
+    from ._story import story
+
+    if structure == "off":
+        return
+    report = f.error if structure == "required" else f.warn
+    for doc in docs:
+        if doc.type != "mod":
+            continue
+        told = story(doc.body)
+        if not told.structured and structure != "required":
+            continue
+        for message in told.problems + told.gaps:
+            report(doc.rel, message)
+
+
+def run_checks(files, head=None, dry_run_structure=None):
     """Run every check over a World's files.
+
+    `dry_run_structure` overrides the World's setting in `world.yml`.
 
     Returns `(docs, by_id, findings)`. Reference checks need the whole World, so
     this always checks all of it; callers narrow the findings afterwards.
     """
+    from . import _settings
+
     vocab = load_vocab()
     f = Findings()
+    settings = _settings.read(files, f)
+    if dry_run_structure is not None:
+        settings = _settings.WorldSettings(dry_run_structure)
     docs, by_id, generated = collect_docs(files, f)
 
     for doc in docs:
@@ -1199,4 +1226,5 @@ def run_checks(files, head=None):
     check_body_mentions(docs, by_id, f)
     check_orphans(docs, by_id, f)
     check_generated_freshness(generated, head, f)
+    check_dry_runs(docs, settings.dry_run_structure, f)
     return docs, by_id, f

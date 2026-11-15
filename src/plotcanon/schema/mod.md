@@ -140,6 +140,55 @@ interesting part, and the reconciler reports it.
   or lose. A mod with one outcome is a cutscene.
 - **`## Logistics`** — props, space, NPC headcount, timing constraints.
 
+### The Dry Run convention — where each part of the story leads
+
+A **Dry Run** is a playable, branching version of a mod, for walking through
+what could happen without players. It is built from the body with plain code,
+so the body says where each part leads, in this form:
+
+- **`## Premise` is where a Dry Run starts.**
+- **Each bullet under `## Hooks` names the scene it leads into:**
+  `- Oleen asks the party directly → [[The vigil itself]]`.
+- **Each `###` scene under `## Scene Breakdown` lists its exits**, each a label
+  and a target: `**Leads to:** the third bell → [[The Order comes through]]`.
+  One line may hold several, separated by `;`. Every scene also offers what
+  happens if the players do nothing, as an exit on its
+  `**If players do nothing:**` line:
+  `**If players do nothing:** the Order takes the register → [[Register taken]]`.
+- **A Contest** is a point whose result depends on play that isn't written in
+  advance (a fight, a chase, a persuasion). It names what is contested, then a
+  target for each result, with at least a success and a failure:
+  `**Contest:** fight the Order, win → [[Order driven off]], lose → [[Register taken]]`.
+  A Dry Run does not simulate a Contest; the reader picks its result.
+- **Each `###` under `## Possible Outcomes` is an ending.**
+- **A link is the target's heading text**, in `[[ ]]`. A number prefix like
+  `1. ` is ignored when matching, and so is case. `->` may be typed for `→`.
+  A label may not contain `,` or `;`, which separate one link from the next,
+  and a link line is one line: it may not wrap.
+- **Scenes may link to any scene**, so scenes can still be played out of order.
+
+Everything else in a scene is prose, shown beside its choices. Links inside a
+code block are not links.
+
+#### The checks
+
+1. A link to a scene or outcome that doesn't exist. Only this makes a Dry Run
+   impossible (and so do two scenes or outcomes with the same heading, or a
+   story with no `## Premise`).
+2. A scene that nothing links to.
+3. A scene with no exits that isn't an outcome, or a Premise no Hook leads on
+   from. A Contest with fewer than two results is reported here too.
+4. An outcome that can never be reached from the Premise.
+
+How they are reported follows the World's **Dry Run structure** setting, in
+`world.yml` at the World's root (see [README.md](README.md#the-worlds-settings-worldyml)):
+
+| `dry_run_structure` | What happens |
+|---|---|
+| `off` | No checks. |
+| `encouraged` | The checks are warnings. A mod with no structure at all — no link and no Contest anywhere — is left alone. **The default** when a World does not say. |
+| `required` | The checks are errors, and so is a mod with no structure at all. This holds for every mod in the World, including finished and shelved ones. |
+
 ### `## Proposed New Entities` — optional, intake only
 
 Mods written with larp-llm's `prompts/mod-writer-intake.md` carry an extra section after
@@ -207,9 +256,9 @@ Sister Oleen calls a night vigil at the chapel. Varen offers to stand guard.
 
 ## Hooks
 
-- Oleen asks the party directly, through anyone who has done her a favour.
-- Tomas Veil is owed an answer by Varen and knows he will be there.
-- Anyone watching the Order's movements can see the chapel is the target.
+- Oleen asks the party directly, through anyone who has done her a favour → [[The vigil itself]]
+- Tomas Veil is owed an answer by Varen and knows he will be there → [[The vigil itself]]
+- Anyone watching the Order's movements can see the chapel is the target → [[The lower door]]
 
 ## Scene Breakdown
 
@@ -222,27 +271,25 @@ party reaches, and the vigil runs whether or not they turn up to it.
 door, in armour, which nobody else is.
 **Oleen wants:** the vigil to finish. She will not be interrupted for less than
 blood.
-**If players do nothing:** it finishes. Varen leaves at the third bell. Scene 3
-happens anyway, without warning.
-**Moves them on:** the third bell, or anyone challenging Varen out loud.
+**If players do nothing:** it finishes; Varen leaves at the third bell → [[The Order comes through]]
+**Leads to:** someone challenges Varen out loud → [[The Order comes through]]; someone checks the lower door → [[The lower door]]
 
 ### 2. The lower door
 
 **Find:** the door, unbarred, and fresh boot-prints in the field outside going
 both ways.
 **Nobody wants anything here** — it is evidence, not a confrontation.
-**If players do nothing:** they miss the only warning they get.
-**Moves them on:** back inside, or out into the field to meet the Order early,
-which turns scene 3 into a fight in the open instead of in the nave.
+**If players do nothing:** they miss the only warning they get → [[The vigil itself]]
+Meeting the Order early turns scene 3 into a fight in the open, not in the nave.
+**Leads to:** out into the field → [[The Order comes through]]
 
 ### 3. The Order comes through
 
 **Find:** eight of the Order, and Varen standing aside.
 **They want:** the register, not the congregation. They will leave people alone
 who leave them alone.
-**If players do nothing:** the Order takes the register and goes. No one dies.
-That is a real outcome, not a failure state.
-**Moves them on:** ends the mod either way.
+**Contest:** fight the Order, win → [[Order driven off]], lose → [[Register taken]]
+**If players do nothing:** the Order takes the register and goes. No one dies → [[Register taken]]
 
 ## NPC Casting
 
@@ -255,7 +302,13 @@ Oleen — talker, no combat.
 
 ## Possible Outcomes
 
-...
+### Order driven off
+
+The register stays in the chapel, and the Order knows the party's faces.
+
+### Register taken
+
+No one dies. That is a real outcome, not a failure state.
 
 ## Rewards
 

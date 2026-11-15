@@ -103,6 +103,15 @@ vocabularies:
     founding:       When the current order of things was established.
     recent-history: Within living memory, before the campaign began.
 
+  # ── World settings (world.yml) ───────────────────────────────────────────
+
+  # How strictly Mods are held to the Dry Run convention in schema/mod.md.
+  # `off` is quoted because YAML reads a bare off as false.
+  dry_run_structure:
+    "off":      No Dry Run checks.
+    encouraged: The checks are warnings. A Mod with no structure is left alone.
+    required:   The checks are errors, and so is a Mod with no structure at all.
+
 
 # ── Machine-readable bindings ───────────────────────────────────────────────
 # Which vocabulary governs which field, per document type. The validator uses
@@ -158,3 +167,6 @@ canon_change_decisions_raising_no_flag: [rejected]
 
 # States that mean the mod has been played, so it must list at least one event.
 mod_states_that_have_run: [in-progress, finished]
+
+# The Dry Run structure of a World whose world.yml does not say.
+dry_run_structure_default: encouraged
