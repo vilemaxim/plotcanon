@@ -26,11 +26,14 @@ does not exist yet.
 | `in_world` | ● | text | Free text, and **authoritative**. Your world has no hard calendar, so this is a phrase, not a date. |
 | `status` | ● | `enum:event_status` | |
 
-A cancelled event **keeps its ordinal**. Renumbering would silently rewrite the
-ordering of every document that references a later event.
+A cancelled event **keeps its ordinal**: taking it out would leave a gap, and
+it did take its place in the order.
 
 Interludes take their own ordinal in sequence, so an interlude sorts correctly
-between the events it sits between. Canon changed during an interlude, with no
+between the events it sits between. To add one between two events that already
+exist, give it the ordinal after the earlier one and move every later event up
+by one, all in one change. Everything refers to an event by its id, never its
+ordinal, so nothing else needs to move. Canon changed during an interlude, with no
 mod run, is recorded in an [interlude-changes](interlude-changes.md) document.
 
 ## Body
