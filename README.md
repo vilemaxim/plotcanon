@@ -84,6 +84,8 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `name_of(world, document)` | What to call a document on a page: its title, its first alias, or for a report its Mod and Event. |
 | `vocabulary_fields(document)` | Which of a document's fields hold a value from a vocabulary, and which vocabulary. |
 | `story(mod)` | A Mod's story by the Dry Run convention, as a `Story`: its start, passages, exits, Contests and endings, and why a Dry Run cannot be built from it, if it cannot. Takes a Mod's `Document` or its text. |
+| `to_twee(text)` | A Mod's file as a Twee 3 story, to open in Twine. |
+| `from_twine(source)` | A Twee file or a Twine 2 `.html` file (archive or published) back into a Mod's markdown, as `FromTwine`: the `markdown`, `warnings` about what does nothing in a Dry Run, and `problems` if the file could not be read. Takes text or bytes. |
 | `world_settings(source)` | A World's settings from its `world.yml`, as `WorldSettings`. `world.settings` gives the same for a loaded World. |
 | `sample_world()` | A ready-made World, as `{path: text}`. |
 | `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
@@ -116,6 +118,38 @@ How strictly a World's Mods are held to the convention is its **Dry Run structur
 world.settings.dry_run_structure                  # "encouraged"
 plotcanon.WorldSettings(dry_run_structure="required").text()   # the file to write
 ```
+
+## Twine
+
+A Mod can be edited in [Twine](https://twinery.org) and brought back. Markdown stays the Mod's source; Twine is only the format it travels in.
+
+```python
+twee = plotcanon.to_twee(text)              # the Mod's whole file, frontmatter included
+
+result = plotcanon.from_twine(upload)       # .twee or Twine 2 .html, as text or bytes
+if result.ok:
+    report = plotcanon.check_file(world, path, result.markdown)
+    result.warnings                         # show beside report.text()
+else:
+    result.problems                         # why the file is not a Twine story
+```
+
+Each part of the Mod is a passage, told apart by its tag:
+
+| Tag | Passage |
+|---|---|
+| `frontmatter` | The YAML, exactly as written. A story with none gives markdown with no frontmatter, which fails validation like any such file. |
+| `premise` | `## Premise`, with `## Hooks` when it follows. Twine starts here. |
+| `scene` | A `###` under `## Scene Breakdown`. A passage with no tag is a scene too, so one added in Twine needs nothing. |
+| `contest` | A Contest. The scene links to it, and its links are its results. |
+| `outcome` | A `###` under `## Possible Outcomes`. |
+| `mod-section` | Any other section, such as NPC Casting or GM Notes, unlinked. |
+
+In the story passages a link `label → [[Target]]` is written `[[label->Target]]`, as Twine writes one, and comes back the same way. Going to Twee and back gives the same file. Two things are not kept: blank lines around headings come back as one, and line endings as `\n`. The sections come back in the order the passages are in the file, with scenes and outcomes under their headings; where a passage sits on Twine's map makes no difference.
+
+Twine variables, macros, HTML and styling are kept as text, with a warning that they do nothing in a Dry Run. So is a link with no label (`[[Target]]`), which a Dry Run does not follow. A tag a Mod has no place for, and the story's JavaScript and stylesheet, are not kept, and a warning says so. Warnings and problems start `Twine: `.
+
+`from_twine` is safe to hand an upload. It reports what is wrong and does not raise. It refuses a file over 5,000,000 characters, a story of more than 1,000 passages, a file holding more than one story, and one that would come to more markdown than a Mod file may hold.
 
 ## Use it from the command line
 

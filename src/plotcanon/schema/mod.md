@@ -189,6 +189,15 @@ How they are reported follows the World's **Dry Run structure** setting, in
 | `encouraged` | The checks are warnings. A mod with no structure at all — no link and no Contest anywhere — is left alone. **The default** when a World does not say. |
 | `required` | The checks are errors, and so is a mod with no structure at all. This holds for every mod in the World, including finished and shelved ones. |
 
+#### In Twine
+
+A mod can be written out as a Twine (Twee 3) story and read back with nothing
+lost: its frontmatter, Premise and Hooks, scenes, Contests, outcomes and every
+other section are passages, told apart by the tags `frontmatter`, `premise`,
+`scene`, `contest`, `outcome` and `mod-section`. A passage with no tag is a
+scene. In Twine a link is written `[[label->Target]]`. See `to_twee` and
+`from_twine` in the package README.
+
 ### `## Proposed New Entities` — optional, intake only
 
 Mods written with larp-llm's `prompts/mod-writer-intake.md` carry an extra section after
