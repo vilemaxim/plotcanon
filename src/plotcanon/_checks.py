@@ -178,12 +178,14 @@ class Change:
     ordinal: int
     source: str
     report_id: str
+    position: int = 0
 
     @property
     def order(self):
         """Sort key. Reports at the same event are taken in id order, with
-        numbers compared as numbers: `aa-<mod>`, `aa-<mod>-2`, `aa-<mod>-10`."""
-        return (self.ordinal, natural_key(self.report_id))
+        numbers compared as numbers: `aa-<mod>`, `aa-<mod>-2`, `aa-<mod>-10`.
+        Changes within one report are taken in the order the report lists them."""
+        return (self.ordinal, natural_key(self.report_id), self.position)
 
 
 def natural_key(text):
@@ -463,6 +465,10 @@ def well_shaped(rel, fm, typ, f):
                         f.error(rel, f"{where}.{key} must be a single value")
                         change = None
                         break
+            if change is not None and change.get("note") is not None \
+                    and not isinstance(change["note"], str):
+                f.error(rel, f"{where}.note must be text")
+                change = None
             shaped.append(change)
         fm["canon_changes"] = shaped
 
@@ -946,7 +952,7 @@ def collect_changes(docs, by_id, vocab, f):
 
             if ordinal is not None and decision == in_canon:
                 out.append(Change(ent, kind, d["from"], d["to"], d.get("summary", ""),
-                                  ev, ordinal, doc.rel, str(doc.id)))
+                                  ev, ordinal, doc.rel, str(doc.id), i))
     return out
 
 

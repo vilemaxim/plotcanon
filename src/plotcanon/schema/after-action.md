@@ -75,6 +75,7 @@ canon_changes:
 | `decision` | ● | `enum:canon_change_decision`. Whether this change is canon. Written as `proposed`; only the Plot Master changes it. |
 | `from` / `to` | ◐ | **Required** for `status`, `location`, `affiliation`. **Forbidden** for the others. |
 | `summary` | ● | One line, plain past tense. This is the text POV summaries are built from — write it to be read. |
+| `note` | ○ | Text. Why the Plot Master approved or rejected the change, in a line or two. Written only by the Plot Master, with the decision. Plain text: it is shown as typed, never as markup. |
 
 ### Each change is decided on its own
 
@@ -87,6 +88,24 @@ Only an approved change is canon. A proposed or rejected one is kept in the
 file for the record and is never applied to an entity, so the validator does
 not expect the entity's file to agree with it. A rejected change is not
 deleted: that it was reported and turned down is itself information.
+
+The Plot Master may say why in a `note` beside the decision. A note is most
+useful on a rejection, so that a Mod Runner reading back can tell a mistake from
+a deliberate ruling, but an approval can carry one too.
+
+```yaml
+  - entity: varen-ashcroft
+    kind: relationship
+    decision: rejected
+    note: "Varen was never named at the vigil; see the mod notes."
+    summary: "Publicly named an oathbreaker by the clerk he had been avoiding."
+```
+
+### Changes to one field in one report
+
+A report may change the same field more than once — a status from `alive` to
+`missing` and then to `dead`. The changes are taken in the order the report
+lists them, so the last approved one is the field's latest value.
 
 ### Two classes of canon change
 

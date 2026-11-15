@@ -570,6 +570,19 @@ class Decisions(ValidatorTest):
 
         self.assertIn("0 errors · 0 warnings", result.stdout)
 
+    def test_two_changes_to_one_field_in_one_report_are_taken_in_the_reports_order(self):
+        self.restore_examples()
+        self.edit(REPORT, "  - entity: varen-ashcroft\n    kind: relationship\n",
+                  "  - entity: varen-ashcroft\n    kind: status\n    decision: approved\n"
+                  "    from: missing\n    to: dead\n"
+                  "    summary: \"Found dead on the north road the same night.\"\n"
+                  "  - entity: varen-ashcroft\n    kind: relationship\n")
+        self.edit("canon/npcs/varen-ashcroft.md", "status: missing", "status: dead")
+
+        result = self.validate()
+
+        self.assertIn("0 errors · 0 warnings", result.stdout)
+
     def test_a_report_no_longer_has_a_flag_for_the_whole_report(self):
         self.restore_examples()
         self.edit(REPORT, "ran: true", "ran: true\ncanon_applied: true")
@@ -577,6 +590,39 @@ class Decisions(ValidatorTest):
         result = self.validate()
 
         self.assertIn("unrecognised field `canon_applied`", result.stdout)
+
+
+class NotesOnDecisions(ValidatorTest):
+    """A Plot Master can say, in a `note`, why a change was approved or rejected."""
+
+    def test_a_rejected_change_can_say_why(self):
+        self.restore_examples()
+        self.edit(REPORT, "    kind: relationship\n    decision: approved\n",
+                  "    kind: relationship\n    decision: rejected\n"
+                  "    note: \"Varen was never named at the vigil; see the mod notes.\"\n")
+
+        result = self.validate()
+
+        self.assertIn("0 errors · 0 warnings", result.stdout)
+
+    def test_an_approved_change_can_say_why(self):
+        self.restore_examples()
+        self.edit(REPORT, STATUS_CHANGE,
+                  STATUS_CHANGE + "    note: Fits the thaw plot.\n")
+
+        result = self.validate()
+
+        self.assertIn("0 errors · 0 warnings", result.stdout)
+
+    def test_a_note_must_be_text(self):
+        self.restore_examples()
+        self.edit(REPORT, STATUS_CHANGE,
+                  STATUS_CHANGE + "    note: [one, two]\n")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("canon_changes[0].note must be text", result.stdout)
 
 
 class TheWorldOwnsEverythingElse(ValidatorTest):

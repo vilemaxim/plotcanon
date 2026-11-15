@@ -216,7 +216,7 @@ class WrongShapes(unittest.TestCase):
         path = "after-actions/e01-low-tide/aa-the-tax-collectors-ledger.md"
         original = frontmatter(self.files[path])
         change = original["canon_changes"][0]
-        for key in list(change) + ["entity", "kind", "decision", "from", "to", "summary"]:
+        for key in list(change) + ["entity", "kind", "decision", "from", "to", "summary", "note"]:
             for value in WRONG_SHAPES:
                 changes = [{**change, key: value}] + original["canon_changes"][1:]
                 self.assert_reported(path, {**original, "canon_changes": changes},
