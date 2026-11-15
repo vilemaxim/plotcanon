@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.5.0"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.6.0"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.5.0"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.6.0"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -79,6 +79,10 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `read_directory(directory)` | Read a World's files from disk into `{path: text}`. |
 | `flags(world, report)` | The Flags a report raises: one for each unfinished Mod and each canon change that names one of its Features. |
 | `flagged_mods(world, report)` | The ids of those Mods, each once. |
+| `references(document)` | The values in a document that name other documents, each a `Reference` with its field, the id and its place. A value in any other field (a Mod Writer's handle, a date) is never one. |
+| `referrers(world, document)` | The documents in a World that refer to a document (or an id). |
+| `name_of(world, document)` | What to call a document on a page: its title, its first alias, or for a report its Mod and Event. |
+| `vocabulary_fields(document)` | Which of a document's fields hold a value from a vocabulary, and which vocabulary. |
 | `sample_world()` | A ready-made World, as `{path: text}`. |
 | `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
 | `vocabularies()` | The allowed values for every enum field. |
