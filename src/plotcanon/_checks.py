@@ -11,6 +11,7 @@ resolves to a real document.
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass, field as dc_field
 from importlib import resources
@@ -138,6 +139,9 @@ class Doc:
     body: str
     type: str
     id: str
+    # Fields whose shape was wrong. Each has had its error, and holds a
+    # stand-in value, so the checks that follow say nothing more about it.
+    misshapen: frozenset = frozenset()
 
     @property
     def stem(self):
@@ -172,7 +176,7 @@ def natural_key(text):
     """Sort key for an id that compares the numbers in it as numbers, so
     `aa-x` comes before `aa-x-2` and that before `aa-x-10`. Only the digits 0
     to 9 count; any other character is compared as text."""
-    return [int(part) if part.isascii() and part.isdigit() else part
+    return [int(part) if part.isascii() and part.isdigit() and len(part) <= 18 else part
             for part in re.split(r"([0-9]+)", str(text))]
 
 
@@ -200,11 +204,282 @@ def split_frontmatter(text):
     return m.group(1), m.group(2)
 
 
+@functools.lru_cache(maxsize=1)
 def load_vocab():
-    """The vocabularies and bindings shipped with this version of the package."""
+    """The vocabularies and bindings shipped with this version of the package.
+    Read once and shared, so treat what it returns as read-only."""
     text = resources.files("plotcanon").joinpath("schema/vocabularies.yml").read_text(
         encoding="utf-8")
     return yaml.safe_load(text)
+
+
+# A document larger than this is refused unread, and frontmatter longer or
+# nested deeper than this is refused unparsed. Parsing YAML costs far more per
+# character than reading text, which is why the frontmatter has the tighter
+# limit. Real documents come nowhere near any of them (the largest file in the
+# sample World is under 2,000 characters and nests four deep); a file that does
+# is a mistake or an attack, and both cost time and memory.
+MAX_FILE_CHARACTERS = 1_000_000
+MAX_FRONTMATTER_CHARACTERS = 100_000
+MAX_NESTING = 20
+
+# No document needs an id, a name or a list of names anywhere near these. They
+# are bounded because each one is compared, sorted or searched for, and the
+# cost of that grows with their size and number.
+MAX_ID_CHARACTERS = 200
+MAX_ALIAS_CHARACTERS = 200
+MAX_ALIASES = 100
+
+# A whole number wider than this many bits is not a count, an order or a date.
+# Python cannot even print a number of a few thousand digits.
+MAX_NUMBER_BITS = 64
+
+
+# Reference fields that name exactly one document. The rest take a list.
+ONE_ID = {"campaign", "event", "mod", "as_of", "first_seen", "location", "seat",
+          "controlled_by"}
+
+
+class Refused(yaml.YAMLError):
+    """Frontmatter that is valid YAML but is not accepted in a World's files."""
+
+
+class Loader(yaml.SafeLoader):
+    """Reads frontmatter. It is the safe loader, with two things refused.
+
+    Aliases: YAML lets one value stand in for another (`&name`, `*name`).
+    Nested, a few hundred bytes stand for millions of values and exhaust memory
+    when expanded. A World's files have no use for them, so a file that uses
+    one is refused at the first alias, before anything is expanded.
+
+    Deep nesting: nothing in the format nests more than a few levels.
+    """
+
+    depth = 0
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            raise Refused("uses a YAML alias (`*name`), which is not allowed in a World's "
+                          "files — write the value out where it is used")
+        self.depth += 1
+        try:
+            if self.depth > MAX_NESTING:
+                raise Refused(f"frontmatter is nested more than {MAX_NESTING} levels deep")
+            return super().compose_node(parent, index)
+        finally:
+            self.depth -= 1
+
+
+def is_single(value):
+    """Whether a value is one thing, not a list or mapping of things."""
+    return not isinstance(value, (list, dict, set, tuple))
+
+
+def showable(text):
+    """Whether text can be shown, stored and sent as it is: no control
+    characters other than line breaks and tabs, and no broken halves of
+    characters (lone surrogates), which cannot be encoded at all."""
+    return not any((ord(c) < 32 and c not in "\n\r\t") or ord(c) == 127 or 0xD800 <= ord(c) <= 0xDFFF
+                   for c in text)
+
+
+def tamed(rel, value, where, f):
+    """A parsed YAML value with anything in it that cannot safely be compared,
+    printed or stored reported and replaced. Returns the value and whether
+    anything was replaced. YAML can produce all of these from a few bytes."""
+    if isinstance(value, bool) or value is None:
+        return value, False
+    if isinstance(value, int):
+        if value.bit_length() > MAX_NUMBER_BITS:
+            f.error(rel, f"`{where}` is a number too large to be meant")
+            return 0, True
+        return value, False
+    if isinstance(value, str):
+        if not showable(value):
+            f.error(rel, f"`{where}` contains characters that cannot be shown "
+                         f"(control characters, or broken text)")
+            return "".join(c for c in value if showable(c)), True
+        return value, False
+    if isinstance(value, list):
+        changed, out = False, []
+        for i, item in enumerate(value):
+            item, item_changed = tamed(rel, item, f"{where}[{i}]", f)
+            out.append(item)
+            changed = changed or item_changed
+        return out, changed
+    if isinstance(value, dict):
+        changed, out = False, {}
+        for key, item in value.items():
+            if isinstance(key, str) and not showable(key):
+                f.error(rel, f"a field name under `{where}` contains characters that "
+                             f"cannot be shown")
+                changed = True
+                continue
+            item, item_changed = tamed(rel, item, f"{where}.{key}", f)
+            out[key] = item
+            changed = changed or item_changed
+        return out, changed
+    return value, False
+
+
+def well_shaped(rel, fm, typ, f):
+    """The frontmatter with every value the checks rely on in the shape they
+    expect, and the names of the fields that had to be changed to get there.
+
+    Wherever a value has the wrong shape, that is reported as an error against
+    the file, and a harmless value is put in its place so that the rest of the
+    checks can still run and say what else is wrong. The field's name is
+    returned so that those checks do not complain a second time about the
+    stand-in.
+
+    A file that is changed here always has an error, so what a caller is handed
+    for a valid file is exactly what the file says.
+    """
+    fm = dict(fm)
+    misshapen = set()
+
+    def wrong(field, message):
+        f.error(rel, message)
+        misshapen.add(field)
+
+    for key in [key for key in fm if not isinstance(key, str) or not showable(key)]:
+        shown = key if isinstance(key, (int, float, bool, type(None))) else "…"
+        if isinstance(key, int) and not isinstance(key, bool) \
+                and key.bit_length() > MAX_NUMBER_BITS:
+            shown = "…"
+        f.error(rel, f"`{shown}` is not a field name — field names are words")
+        del fm[key]
+
+    for field in list(fm):
+        fm[field], changed = tamed(rel, fm[field], field, f)
+        if changed:
+            misshapen.add(field)
+
+    if fm.get("id") is not None and not isinstance(fm["id"], str):
+        wrong("id", f"`id` must be a slug, got {fm['id']!r}")
+        fm["id"] = None
+    elif isinstance(fm.get("id"), str) and len(fm["id"]) > MAX_ID_CHARACTERS:
+        wrong("id", f"`id` is longer than {MAX_ID_CHARACTERS} characters")
+        fm["id"] = None
+
+    def id_list(field, where, listed):
+        """A list of ids. Anything in it that is not one is reported and left out."""
+        good = [item for item in listed if isinstance(item, str) or item is None]
+        if len(good) != len(listed):
+            wrong(field, f"`{where}` must be a list of ids")
+        return good
+
+    for field in REFS.get(typ, {}):
+        value = fm.get(field)
+        if value is None or (isinstance(value, str) and field in ONE_ID):
+            continue
+        if field in ONE_ID:
+            if isinstance(value, list):
+                wrong(field, f"`{field}` must be one id, not a list")
+            elif is_single(value):
+                wrong(field, f"`{field}` must be an id, got {value!r}")
+            else:
+                wrong(field, f"`{field}` must be one id")
+            fm[field] = None
+        elif isinstance(value, list):
+            fm[field] = id_list(field, field, value)
+        else:
+            wrong(field, f"`{field}` must be a list of ids")
+            fm[field] = []
+
+    # A field that takes a value from a vocabulary takes one value.
+    for field in load_vocab()["bindings"].get(typ, {}):
+        if field in fm and not is_single(fm[field]):
+            wrong(field, f"`{field}` must be a single value, not a list")
+            fm[field] = None
+
+    if "aliases" in fm and fm["aliases"] is not None:
+        aliases = fm["aliases"]
+        if not isinstance(aliases, list) or not all(is_single(a) for a in aliases):
+            wrong("aliases", "`aliases` must be a list of names")
+            aliases = [a for a in aliases if is_single(a)] if isinstance(aliases, list) else []
+        if len(aliases) > MAX_ALIASES:
+            wrong("aliases", f"`aliases` has more than {MAX_ALIASES} names")
+            aliases = aliases[:MAX_ALIASES]
+        if any(len(str(a)) > MAX_ALIAS_CHARACTERS for a in aliases):
+            wrong("aliases", f"a name in `aliases` is longer than {MAX_ALIAS_CHARACTERS} "
+                             f"characters")
+            aliases = [a for a in aliases if len(str(a)) <= MAX_ALIAS_CHARACTERS]
+        fm["aliases"] = aliases
+
+    for field in set(LINK_FIELD.values()) & set(fm):
+        links = fm[field]
+        if links is None:
+            continue
+        if not isinstance(links, dict):
+            f.error(rel, f"`{field}` must be a mapping of {'/'.join(LINK_KEYS)} to id lists")
+            fm[field] = {}
+            continue
+        shaped = {}
+        for key, listed in links.items():
+            if not isinstance(key, str):
+                f.error(rel, f"`{field}.{key}` is not a recognised key ({', '.join(LINK_KEYS)})")
+            elif not isinstance(listed, list):
+                f.error(rel, f"`{field}.{key}` must be a list of ids")
+            else:
+                shaped[key] = id_list(field, f"{field}.{key}", listed)
+        fm[field] = shaped
+
+    if "canon_changes" in fm and fm["canon_changes"] is not None:
+        changes = fm["canon_changes"]
+        if not isinstance(changes, list):
+            f.error(rel, "`canon_changes` must be a list")
+            changes = []
+        shaped = []
+        for i, change in enumerate(changes):
+            where = f"canon_changes[{i}]"
+            if not isinstance(change, dict):
+                f.error(rel, f"{where} must be a mapping")
+                shaped.append(None)  # Kept, so that the changes after it keep their place.
+                continue
+            # A change with a wrongly shaped part is reported once, here, and
+            # then left out of the checks that follow, like one that is not a
+            # mapping at all.
+            if change.get("entity") is not None and not isinstance(change["entity"], str):
+                f.error(rel, f"{where}.entity must be an id")
+                change = None
+            else:
+                for key in ("kind", "decision", "from", "to"):
+                    if key in change and not is_single(change[key]):
+                        f.error(rel, f"{where}.{key} must be a single value")
+                        change = None
+                        break
+            shaped.append(change)
+        fm["canon_changes"] = shaped
+
+    if "requires" in fm and fm["requires"] is not None:
+        clauses = fm["requires"]
+        if not isinstance(clauses, list):
+            f.error(rel, "`requires` must be a list of clauses")
+            clauses = []
+        shaped = []
+        for i, clause in enumerate(clauses):
+            where = f"requires[{i}]"
+            # A clause that is wrong is reported here and kept as an empty
+            # place, so that the clauses after it keep their numbers.
+            if not isinstance(clause, dict):
+                f.error(rel, f"{where} needs `entity` and `field`")
+                clause = None
+            elif not isinstance(clause.get("entity"), str) \
+                    or not isinstance(clause.get("field"), str):
+                f.error(rel, f"{where} needs `entity` and `field`, each a single word")
+                clause = None
+            elif "in" in clause and (not isinstance(clause["in"], list)
+                                     or not all(is_single(v) for v in clause["in"])):
+                f.error(rel, f"{where}.in must be a list of values")
+                clause = None
+            elif "equals" in clause and not is_single(clause["equals"]):
+                f.error(rel, f"{where}.equals must be a single value")
+                clause = None
+            shaped.append(clause)
+        fm["requires"] = shaped
+
+    return fm, frozenset(misshapen)
 
 
 def collect_docs(files, f: Findings):
@@ -219,26 +494,45 @@ def collect_docs(files, f: Findings):
     for rel in sorted(files, key=scan_order):
         if not is_scanned(rel):
             continue
+        if len(files[rel]) > MAX_FILE_CHARACTERS:
+            f.error(rel, f"is larger than {MAX_FILE_CHARACTERS:,} characters, which is more "
+                         f"than one document should need")
+            continue
         raw, body = split_frontmatter(files[rel])
         if raw is None:
             f.error(rel, "no YAML frontmatter block")
             continue
-        try:
-            fm = yaml.safe_load(raw) or {}
-        except yaml.YAMLError as e:
-            f.error(rel, f"frontmatter is not valid YAML: {' '.join(str(e).split())}")
+        if len(raw) > MAX_FRONTMATTER_CHARACTERS:
+            f.error(rel, f"frontmatter is longer than {MAX_FRONTMATTER_CHARACTERS:,} "
+                         f"characters, which is more than a document's fields should need")
             continue
+        try:
+            fm = yaml.load(raw, Loader=Loader)  # noqa: S506 - a SafeLoader subclass
+        except Refused as e:
+            f.error(rel, str(e))
+            continue
+        except Exception as e:  # noqa: BLE001
+            # PyYAML raises more than its own errors: a tag that does not fit
+            # its value fails inside the constructor with whatever that hit.
+            # Whatever it was, the block could not be read as YAML.
+            reason = " ".join(str(e).split())[:300] or type(e).__name__
+            f.error(rel, f"frontmatter is not valid YAML: {reason}")
+            continue
+        if fm is None:
+            fm = {}
         if not isinstance(fm, dict):
             f.error(rel, "frontmatter must be a mapping")
             continue
         if rel.startswith("generated/"):
+            fm, _changed = tamed(rel, fm, "frontmatter", f)
             generated.append(Doc(rel, fm, body, "generated", None))
             continue
         typ = fm.get("type")
-        if typ not in SCHEMAS:
+        if not isinstance(typ, str) or typ not in SCHEMAS:
             f.error(rel, f"unknown or missing `type`: {typ!r}")
             continue
-        doc = Doc(rel, fm, body, typ, fm.get("id"))
+        fm, misshapen = well_shaped(rel, fm, typ, f)
+        doc = Doc(rel, fm, body, typ, fm.get("id"), misshapen)
         docs.append(doc)
         if doc.id:
             if doc.id in by_id:
@@ -256,7 +550,8 @@ def check_fields(doc, f):
     for key in schema["required"]:
         if key not in doc.fm:
             f.error(doc.rel, f"missing required field `{key}`")
-        elif doc.fm[key] is None and key not in ("location", "seat", "controlled_by"):
+        elif (doc.fm[key] is None and key not in doc.misshapen
+              and key not in ("location", "seat", "controlled_by")):
             f.error(doc.rel, f"required field `{key}` is empty")
 
     allowed = set(schema["required"]) | set(schema["optional"])
@@ -265,7 +560,7 @@ def check_fields(doc, f):
             f.warn(doc.rel, f"unrecognised field `{key}` — typo, or update schema/")
 
     stem = doc.stem
-    if doc.id != stem:
+    if doc.id != stem and "id" not in doc.misshapen:
         f.error(doc.rel, f"`id` is `{doc.id}` but filename stem is `{stem}` — they must match")
 
     if doc.id and not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", str(doc.id)):
@@ -283,11 +578,11 @@ def check_fields(doc, f):
 def check_enums(doc, vocab, f):
     """E3: every enum-typed field holds a value from its vocabulary."""
     for fieldname, vocab_name in vocab["bindings"].get(doc.type, {}).items():
-        if fieldname not in doc.fm:
+        if fieldname not in doc.fm or fieldname in doc.misshapen:
             continue
         value = doc.fm[fieldname]
         allowed = vocab["vocabularies"][vocab_name]
-        if value not in allowed:
+        if not isinstance(value, str) or value not in allowed:
             f.error(doc.rel,
                     f"`{fieldname}: {value}` is not in vocabulary `{vocab_name}` "
                     f"({', '.join(allowed)})")
@@ -369,7 +664,7 @@ def check_events(docs, f):
     seen = {}
     for e in events:
         o = e.fm.get("ordinal")
-        if not isinstance(o, int):
+        if not isinstance(o, int) or isinstance(o, bool):
             f.error(e.rel, f"`ordinal` must be an integer, got {o!r}")
             continue
         if o in seen:
@@ -449,9 +744,6 @@ def check_report_placement(doc, by_id, f):
     if ev and parent != f"after-actions/{ev}":
         f.error(doc.rel, f"must live in after-actions/{ev}/, not {parent}/")
 
-    if not isinstance(doc.fm.get("pcs", []), list):
-        f.error(doc.rel, "`pcs` must be a list of ids")
-
     finished = doc.fm.get("finished")
     if finished is not None and not isinstance(finished, bool):
         shown = repr(finished) if isinstance(finished, str) and finished in ("true", "false") \
@@ -461,9 +753,6 @@ def check_report_placement(doc, by_id, f):
     if finished is True and doc.fm.get("ran") is False:
         f.error(doc.rel, "`ran: false` with `finished: true` — a mod that did not run was "
                          "not finished by this report. Say `finished: false`")
-    for single in ("mod", "event"):
-        if isinstance(doc.fm.get(single), (list, dict)):
-            f.error(doc.rel, f"`{single}` must be one id, not a list")
 
     # A mod lists every event it runs at, so a report can only be for one of those.
     mod_id = doc.fm.get("mod")
@@ -559,10 +848,12 @@ def collect_changes(docs, by_id, vocab, f):
             f.error(doc.rel, "`canon_changes` must be a list")
             continue
         ev = doc.fm.get("event")
-        ordinal = by_id[ev].fm.get("ordinal") if ev in by_id else None
+        ordinal = ordinal_of(ev, by_id) if isinstance(ev, str) else None
 
         for i, d in enumerate(changes):
             where = f"canon_changes[{i}]"
+            if d is None:
+                continue  # Wrongly shaped, and already reported by `well_shaped`.
             if not isinstance(d, dict):
                 f.error(doc.rel, f"{where} must be a mapping")
                 continue
@@ -623,11 +914,13 @@ def collect_changes(docs, by_id, vocab, f):
 
 
 def ordinal_of(event_id, by_id):
-    doc = by_id.get(event_id)
+    """An event's place in the order, or None if the id is not an event's or
+    the event's `ordinal` is not a whole number."""
+    doc = by_id.get(event_id) if isinstance(event_id, str) else None
     if doc is None or doc.type != "event":
         return None
     o = doc.fm.get("ordinal")
-    return o if isinstance(o, int) else None
+    return o if isinstance(o, int) and not isinstance(o, bool) else None
 
 
 def state_as_of(entity_id, fieldname, target_ordinal, by_id, changes_by_key):
@@ -682,6 +975,8 @@ def check_preconditions(docs, by_id, changes_by_key, f):
         target_ord = first_event_ordinal(doc, by_id)
         for i, clause in enumerate(reqs):
             where = f"requires[{i}]"
+            if clause is None:
+                continue  # Wrongly shaped, and already reported by `well_shaped`.
             if not isinstance(clause, dict) or "entity" not in clause or "field" not in clause:
                 f.error(doc.rel, f"{where} needs `entity` and `field`")
                 continue
@@ -741,7 +1036,7 @@ def check_alias_collisions(docs, f):
             claims.setdefault(str(alias).strip().lower(), []).append(doc)
     for alias, owners in sorted(claims.items()):
         if len(owners) > 1:
-            ids = ", ".join(sorted(d.id for d in owners))
+            ids = ", ".join(sorted(str(d.id) for d in owners))
             f.warn(owners[0].rel, f"alias {alias!r} is claimed by {len(owners)} entities "
                                   f"({ids}) — name lookup is ambiguous")
 
@@ -756,7 +1051,7 @@ def check_body_mentions(docs, by_id, f):
         terms |= {str(a) for a in (doc.fm.get("aliases") or [])}
         for t in terms:
             if len(t) >= MIN_ALIAS_SCAN_LEN:
-                lookup.append((re.compile(rf"\b{re.escape(t)}\b", re.I), doc, t))
+                lookup.append((t.lower(), doc, t))
 
     for doc in docs:
         link_field = LINK_FIELD.get(doc.type)
@@ -767,11 +1062,17 @@ def check_body_mentions(docs, by_id, f):
             continue
         linked = {i for ids in links.values() if isinstance(ids, list) for i in ids}
         body = INLINE_CODE_RE.sub(" ", CODE_FENCE_RE.sub(" ", doc.body))
+        lowered = body.lower()
         hits = {}
-        for pattern, target, term in lookup:
+        for term_lowered, target, term in lookup:
             if target.id in linked or target.id == doc.id:
                 continue
-            if pattern.search(body):
+            # A plain search is far cheaper than a pattern, and nearly every
+            # name is absent from nearly every body. Only a name that does
+            # appear is then checked for standing as a word of its own.
+            if term_lowered not in lowered:
+                continue
+            if re.search(rf"\b{re.escape(term)}\b", body, re.I):
                 hits.setdefault(target.id, set()).add(term)
         for eid, terms in sorted(hits.items()):
             shown = ", ".join(sorted(terms))

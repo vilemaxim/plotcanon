@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import posixpath
 from collections.abc import Mapping
@@ -148,9 +149,32 @@ def _document(doc):
     return Document(doc.rel, doc.type, doc.id, MappingProxyType(doc.fm), doc.body)
 
 
+# Where a finding is filed when it is about the World as a whole, not one file.
+THE_WORLD = "(the World)"
+
+
+def _checked(files, head=None):
+    """Run every check. The checks are written not to raise whatever a file
+    holds, and are tested for it. Should one raise all the same, that is
+    reported as a finding about the World, so that a caller taking files from
+    strangers is never handed an exception for something in a file."""
+    try:
+        return _checks.run_checks(files, head)
+    except MemoryError:
+        raise  # Not something in a file to report: the machine is out of memory.
+    except Exception as error:  # noqa: BLE001 - the last resort, by design
+        raw = _checks.Findings()
+        # Only the kind of error is given. Its message could quote a file's
+        # contents or a path on the machine running this.
+        raw.error(THE_WORLD, f"could not be checked ({type(error).__name__}). This is a "
+                             f"fault in plotcanon, set off by something in one of the "
+                             f"files; please report it")
+        return [], {}, raw
+
+
 def _findings(raw, only=None):
     errors = tuple(Finding(ERROR, path, msg) for path, msg in raw.errors
-                   if only is None or path == only)
+                   if only is None or path in (only, THE_WORLD))
     warnings = tuple(Finding(WARNING, path, msg) for path, msg in raw.warnings
                      if only is None or path == only)
     return errors, warnings
@@ -167,7 +191,7 @@ def load_world(source, *, head=None):
     errors, and None otherwise.
     """
     files = _files_of(source)
-    docs, _by_id, raw = _checks.run_checks(files, head)
+    docs, _by_id, raw = _checked(files, head)
     errors, warnings = _findings(raw)
     world = None if errors else World([_document(d) for d in docs], files)
     return Report(errors, warnings, world=world, document_count=len(docs))
@@ -193,7 +217,7 @@ def check_file(world, path, text):
                                             f"are .md files under {folders}"),))
     files = _files_of(world)
     files[path] = text
-    docs, _by_id, raw = _checks.run_checks(files)
+    docs, _by_id, raw = _checked(files)
     errors, warnings = _findings(raw, only=path)
     parsed = next((d for d in docs if d.rel == path), None)
     # A clash of ids is reported on whichever file sorts later. Here it is
@@ -351,8 +375,9 @@ def sample_script():
 
 
 def vocabularies():
-    """The allowed values for every enum field, and which field uses which."""
-    return _checks.load_vocab()
+    """The allowed values for every enum field, and which field uses which.
+    Each call returns a copy of its own."""
+    return copy.deepcopy(_checks.load_vocab())
 
 
 def schema_files():

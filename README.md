@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.3.0"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.4.0"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.3.0"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.4.0"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -53,6 +53,24 @@ ERROR  inbox/the-ashen-vigil.md: `features.npcs: no-such-npc` does not resolve t
 ```
 
 Errors mean the file is not valid. Warnings are for a person to judge and do not stop a World from loading.
+
+### Files from strangers
+
+`load_world` and `check_file` are safe to hand files you did not write. Whatever a file holds, they report it as a finding and do not raise. Where the checks rely on a value's shape, a value of the wrong shape, such as a list where one id belongs, is an error naming the field.
+
+Some things are refused as soon as they are seen, without the work they would otherwise cost:
+
+- **A YAML alias** (`*name`). Nested, a few hundred bytes of them stand for millions of values. A World's files have no use for them. An anchor (`&name`) that nothing refers to is harmless and allowed.
+- **A file over a million characters**, or **frontmatter over a hundred thousand**. Parsing YAML costs far more per character than reading text, so the block of fields has the tighter limit.
+- **Frontmatter nested more than twenty levels deep.**
+- **An id over 200 characters, a name over 200, or more than 100 names** for one document.
+- **A whole number too large to be meant**, and **text with control characters or broken characters in it**, which could not be shown or stored.
+
+The limits are fixed; real documents come nowhere near them.
+
+What plotcanon does not bound is the World as a whole: how many files you hand it and how much text they hold in total. Every name is looked for in the text of every Mod, so the cost of a check grows with both. Bounding those, and unpacking an upload safely, is for the caller. A path that points outside the World (`../x.md`) raises `ValueError`, since that is a fault in what was handed over, not in a file's contents.
+
+Should a check ever fail in a way none of this foresaw, the caller is still not handed an exception: the report carries one error against `(the World)` saying so.
 
 | Function | What it does |
 |---|---|
