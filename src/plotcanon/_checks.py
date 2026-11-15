@@ -738,18 +738,26 @@ def check_mod_placement(doc, vocab, by_id, f):
                          f"take a Mod Writer's word for it.")
 
 
+def yes_or_no(doc, field, meaning, f):
+    """A field that must be true or false. Quoted `"true"` is text, not true,
+    so it is shown quoted to make that plain."""
+    value = doc.fm.get(field)
+    if value is None or isinstance(value, bool):
+        return
+    shown = repr(value) if isinstance(value, str) and value in ("true", "false") else value
+    f.error(doc.rel, f"`{field}: {shown}` must be true or false — {meaning}")
+
+
 def check_report_placement(doc, by_id, f):
     parent = doc.parent
     ev = doc.fm.get("event")
     if ev and parent != f"after-actions/{ev}":
         f.error(doc.rel, f"must live in after-actions/{ev}/, not {parent}/")
 
+    yes_or_no(doc, "ran", "true if the mod was played, false if it was not", f)
+    yes_or_no(doc, "finished", "true if this report is the last on its mod, false if "
+                               "there is more to play", f)
     finished = doc.fm.get("finished")
-    if finished is not None and not isinstance(finished, bool):
-        shown = repr(finished) if isinstance(finished, str) and finished in ("true", "false") \
-            else finished
-        f.error(doc.rel, f"`finished: {shown}` must be true or false — true if this "
-                         f"report is the last on its mod, false if there is more to play")
     if finished is True and doc.fm.get("ran") is False:
         f.error(doc.rel, "`ran: false` with `finished: true` — a mod that did not run was "
                          "not finished by this report. Say `finished: false`")

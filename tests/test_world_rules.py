@@ -645,6 +645,24 @@ class WhetherAModIsFinished(ValidatorTest):
         self.assertEqual(result.returncode, 1)
         self.assertIn(f"{REPORT}: `finished: mostly` must be true or false", result.stdout)
 
+    def test_whether_it_ran_must_be_yes_or_no_too(self):
+        self.restore_examples()
+        self.edit(REPORT, "ran: true", "ran: maybe")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{REPORT}: `ran: maybe` must be true or false", result.stdout)
+
+    def test_a_quoted_yes_is_named_as_text(self):
+        self.restore_examples()
+        self.edit(REPORT, "ran: true", 'ran: "true"')
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{REPORT}: `ran: 'true'` must be true or false", result.stdout)
+
     def test_a_report_after_the_one_that_finished_the_mod_is_an_error(self):
         self.restore_examples()
         self.second_report()
