@@ -4,6 +4,7 @@ type: after-action
 mod: storm-moon-vigil
 event: e03-storm-moon
 ran: true
+finished: true
 mod_runner: mira
 pcs: [pc-ilse-marrow]
 canon_changes:
@@ -19,11 +20,11 @@ canon_changes:
 
 ## What Happened
 
-A short coda on Sunday morning: getting back from the reef.
+The end of the vigil, on Sunday morning: getting everyone back off the reef.
 
 ## Divergences From The Mod
 
-Not in the mod at all. Recorded because two people were in it.
+The mod has no scene for the way back; it was played as its ending. Recorded because two people who were not expected were in it.
 
 ## Loose Ends
 

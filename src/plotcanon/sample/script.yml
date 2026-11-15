@@ -5,8 +5,12 @@
 #   report      where the report goes in the World
 #   summary     what it is for, in a line
 #   flags       the Mods it should flag: every unfinished Mod that features an
-#               entity one of its canon changes names
+#               entity one of its canon changes names. Each list assumes the
+#               reports before it have been submitted and each of their Mods
+#               has had its state brought up to date: in-progress after an
+#               interruption, finished after the report that finishes it.
 #   interrupts  true if it stops a Mod that has more to play
+#   finishes    true if it is the last report on its Mod
 #   contradicts other scripted reports that disagree with it about one entity
 
 reports:
@@ -22,25 +26,27 @@ reports:
 
   - report: after-actions/e03-storm-moon/aa-blood-on-the-salt-stair.md
     summary: >-
-      Says the smuggler died on the stair. Also touches the captain, which
-      reaches a draft still in the inbox.
+      Finishes its Mod, so it does not flag that Mod. Says the smuggler died
+      on the stair. Also touches the captain, which reaches a draft still in
+      the inbox.
+    finishes: true
     contradicts:
       - after-actions/e03-storm-moon/aa-storm-moon-vigil.md
     flags:
       - the-tax-collectors-ledger
-      - blood-on-the-salt-stair
       - a-warrant-for-dunmore
       - the-guildmasters-daughter
 
   - report: after-actions/e03-storm-moon/aa-storm-moon-vigil.md
     summary: >-
       Run at the same hour, and says the smuggler rowed away alive. The two
-      reports cannot both be approved as they stand.
+      reports cannot both be approved as they stand. The vigil has more to
+      play, so this report flags its own Mod too.
+    interrupts: true
     contradicts:
       - after-actions/e03-storm-moon/aa-blood-on-the-salt-stair.md
     flags:
       - the-tax-collectors-ledger
-      - blood-on-the-salt-stair
       - a-warrant-for-dunmore
       - storm-moon-vigil
       - what-the-keeper-saw
@@ -48,13 +54,16 @@ reports:
 
   - report: after-actions/e03-storm-moon/aa-storm-moon-vigil-2.md
     summary: >-
-      A second report on the same Mod at the same Event. It names only people
-      whom no unfinished Mod features, so it flags nothing.
+      A second report on the same Mod at the same Event, and the one that
+      finishes it. It names only people whom no unfinished Mod features, so it
+      flags nothing.
+    finishes: true
     flags: []
 
   - report: after-actions/e04-second-lantern/aa-what-the-keeper-saw.md
     summary: >-
-      From the other Campaign. The keeper dies in the Mod that needed him, so
-      the only Mod it flags is its own.
-    flags:
-      - what-the-keeper-saw
+      From the other Campaign. The keeper dies in the Mod that needed him. It
+      finishes that Mod, and no other unfinished Mod features him, so it flags
+      nothing.
+    finishes: true
+    flags: []

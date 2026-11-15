@@ -187,6 +187,7 @@ type: after-action
 mod: the-ashen-vigil
 event: e02-hollow-night
 ran: true
+finished: true
 mod_runner: alex
 pcs: [pc-tomas-veil]
 canon_changes:
@@ -206,7 +207,12 @@ canon_changes:
 
 class CheckingOneFile(unittest.TestCase):
     def setUp(self):
-        self.world = plotcanon.load_world(example_files()).world
+        """The example World, with its one report changed to an interruption
+        so that the Mod can take a second report."""
+        files = example_files()
+        files[REPORT] = files[REPORT].replace("finished: true", "finished: false")
+        files[VIGIL] = files[VIGIL].replace("state: finished", "state: in-progress")
+        self.world = plotcanon.load_world(files).world
 
     def test_a_valid_mod_comes_back_parsed(self):
         report = plotcanon.check_file(self.world, "inbox/the-thaw-hunt.md", NEW_MOD)
@@ -284,12 +290,29 @@ class CheckingOneFile(unittest.TestCase):
                          "also in mods/greymoor/the-ashen-vigil.md")
 
     def test_an_untidy_path_still_replaces_the_file_it_names(self):
-        revised = self.world.files[VIGIL].replace("state: finished", "state: played")
+        revised = self.world.files[VIGIL].replace("state: in-progress", "state: played")
 
         report = plotcanon.check_file(self.world, "./" + VIGIL, revised)
 
         self.assertFalse(report.ok)
         self.assertEqual(report.errors[0].path, VIGIL)
+
+    def test_a_late_report_for_an_earlier_event_is_told_the_mod_already_finished(self):
+        """The Mod has a stored report that finished it. A report submitted
+        afterwards for an earlier stretch of play that also says finished
+        must hear about it itself, since only its own findings come back."""
+        files = dict(self.world.files)
+        files[REPORT] = files[REPORT].replace("finished: false", "finished: true")
+        files[VIGIL] = files[VIGIL].replace("events: [e02-hollow-night]",
+                                            "events: [e01-first-frost, e02-hollow-night]")
+        early = NEW_REPORT.replace("event: e02-hollow-night", "event: e01-first-frost")
+
+        report = plotcanon.check_file(
+            files, "after-actions/e01-first-frost/aa-the-ashen-vigil-2.md", early)
+
+        self.assertFalse(report.ok)
+        self.assertIn("says mod `the-ashen-vigil` is finished, but `aa-the-ashen-vigil` "
+                      "reports on it afterwards", report.text())
 
     def test_a_path_outside_the_world_folders_is_rejected(self):
         report = plotcanon.check_file(self.world, "the-thaw-hunt.md", NEW_MOD)

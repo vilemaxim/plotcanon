@@ -4,6 +4,7 @@ type: after-action
 mod: the-ashen-vigil
 event: e02-hollow-night
 ran: true
+finished: true
 mod_runner: alex
 pcs: [pc-tomas-veil]
 canon_changes:

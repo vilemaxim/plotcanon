@@ -65,10 +65,23 @@ class TheSampleWorld(unittest.TestCase):
 class TheScript(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        """Submit the script in order. After each report its Mod's state is
+        brought up to date, as the Plot Master or the app would do, so each
+        report is checked against the World as it stands when it arrives."""
         cls.world = plotcanon.load_world(plotcanon.sample_world()).world
         cls.script = plotcanon.sample_script()
-        cls.checked = {s.path: plotcanon.check_file(cls.world, s.path, s.text)
-                       for s in cls.script}
+        cls.checked, cls.world_at = {}, {}
+        files = plotcanon.sample_world()
+        for scripted in cls.script:
+            world = plotcanon.load_world(files).world
+            report = plotcanon.check_file(world, scripted.path, scripted.text)
+            cls.checked[scripted.path], cls.world_at[scripted.path] = report, world
+            files[scripted.path] = scripted.text
+            mod = world.get(report.document.fields["mod"])
+            state = "finished" if report.document.fields["finished"] else "in-progress"
+            files[mod.path] = files[mod.path].replace(
+                f"state: {mod.fields['state']}", f"state: {state}")
+        cls.files_after = files
 
     def campaign_of(self, mod_id):
         return self.world.get(mod_id).fields.get("campaign")
@@ -91,7 +104,22 @@ class TheScript(unittest.TestCase):
             with self.subTest(scripted.path):
                 self.assertEqual(plotcanon.check_file(files, scripted.path, scripted.text).text(), "")
                 files[scripted.path] = scripted.text
-        self.assertEqual(plotcanon.load_world(files).text(), "")
+        after = plotcanon.load_world(files)
+        self.assertEqual(after.errors, ())
+        # What is left for the Plot Master: each Mod the reports moved on needs
+        # its state set to match.
+        self.assertEqual(sorted(w.path.rsplit("/", 1)[-1] for w in after.warnings),
+                         ["blood-on-the-salt-stair.md", "storm-moon-vigil.md",
+                          "what-the-keeper-saw.md"])
+
+    def test_with_each_mods_state_kept_up_to_date_nothing_is_left_to_judge(self):
+        self.assertEqual(plotcanon.load_world(self.files_after).text(), "")
+
+    def test_a_mod_finished_by_one_report_is_not_flagged_by_the_next(self):
+        by_name = {s.path.rsplit("/", 1)[-1]: s for s in self.script}
+
+        self.assertTrue(by_name["aa-blood-on-the-salt-stair.md"].finishes)
+        self.assertNotIn("blood-on-the-salt-stair", by_name["aa-storm-moon-vigil.md"].flags)
 
     def test_some_mods_say_what_they_need_and_what_they_expect(self):
         mods = self.world.of_type("mod")
@@ -119,7 +147,7 @@ class TheScript(unittest.TestCase):
         for scripted in self.script:
             with self.subTest(scripted.path):
                 document = self.checked[scripted.path].document
-                self.assertEqual(plotcanon.flagged_mods(self.world, document),
+                self.assertEqual(plotcanon.flagged_mods(self.world_at[scripted.path], document),
                                  sorted(scripted.flags))
 
     def test_each_explains_itself(self):
@@ -132,17 +160,17 @@ class TheScript(unittest.TestCase):
 
         self.assertTrue(interrupting)
         for scripted in interrupting:
-            mod = self.world.get(self.checked[scripted.path].document.fields["mod"])
-            earlier = [r for r in self.world.of_type("after-action")
-                       if r.fields["mod"] == mod.id]
-            self.assertEqual(mod.fields["state"], "in-progress")
-            self.assertTrue(earlier, "an interrupted Mod already has a report")
+            self.assertIs(self.checked[scripted.path].document.fields["finished"], False)
+        again = [s for s in interrupting
+                 if self.world.get(self.checked[s.path].document.fields["mod"]).fields["state"]
+                 == "in-progress"]
+        self.assertTrue(again, "one interrupts a Mod that was already interrupted once")
 
     def test_each_flag_names_the_change_and_the_feature_that_raised_it(self):
         for scripted in self.script:
             with self.subTest(scripted.path):
                 document = self.checked[scripted.path].document
-                flags = plotcanon.flags(self.world, document)
+                flags = plotcanon.flags(self.world_at[scripted.path], document)
                 changes = document.fields["canon_changes"]
                 self.assertEqual(sorted({f.mod for f in flags}), sorted(scripted.flags))
                 for flag in flags:
@@ -163,6 +191,22 @@ class TheScript(unittest.TestCase):
         ]
 
         self.assertTrue(crossing)
+
+    def test_one_finishes_a_mod_and_says_so(self):
+        finishing = [s for s in self.script if s.finishes]
+
+        self.assertTrue(finishing)
+        for scripted in self.script:
+            with self.subTest(scripted.path):
+                document = self.checked[scripted.path].document
+                self.assertIs(document.fields["finished"], scripted.finishes)
+                self.assertFalse(scripted.finishes and scripted.interrupts)
+
+    def test_a_report_that_finishes_its_mod_never_flags_it(self):
+        for scripted in self.script:
+            mod = self.checked[scripted.path].document.fields["mod"]
+            if scripted.finishes:
+                self.assertNotIn(mod, scripted.flags, scripted.path)
 
     def test_one_flags_nothing_at_all(self):
         self.assertTrue([s for s in self.script if s.flags == ()])
@@ -236,7 +280,7 @@ class FlaggedMods(unittest.TestCase):
         world = plotcanon.load_world(files).world
         report = plotcanon.check_file(
             world, "after-actions/e01/aa-the-hunt.md",
-            "---\nid: aa-the-hunt\ntype: after-action\nmod: the-hunt\nevent: e01\nran: true\n"
+            "---\nid: aa-the-hunt\ntype: after-action\nmod: the-hunt\nevent: e01\nran: true\nfinished: true\n"
             "mod_runner: alex\npcs: [pc-ada]\ncanon_changes:\n"
             "  - {entity: the-cook, kind: narrative, decision: proposed, summary: Burnt it.}\n"
             "  - {entity: the-baron, kind: narrative, decision: proposed, summary: Left early.}\n"
@@ -250,7 +294,15 @@ class FlaggedMods(unittest.TestCase):
             ("the-wake", 1, "the-baron"),
         ])
 
-    def flagged_by(self, changes, mods, decision="proposed"):
+    def test_a_report_that_finishes_its_own_mod_does_not_flag_it(self):
+        mods = [self.mod("the-hunt", "in-progress", "[the-baron]"),
+                self.mod("the-feast", "approved", "[the-baron]")]
+
+        self.assertEqual(self.flagged_by(["the-baron"], mods, finished="true"), ["the-feast"])
+        self.assertEqual(self.flagged_by(["the-baron"], mods, finished="false"),
+                         ["the-feast", "the-hunt"])
+
+    def flagged_by(self, changes, mods, decision="proposed", finished="false"):
         files = dict(self.WORLD)
         files.update(dict(mods))
         loaded = plotcanon.load_world(files)
@@ -260,7 +312,8 @@ class FlaggedMods(unittest.TestCase):
         checked = plotcanon.check_file(
             loaded.world, "after-actions/e01/aa-the-hunt.md",
             "---\nid: aa-the-hunt\ntype: after-action\nmod: the-hunt\nevent: e01\nran: true\n"
-            f"mod_runner: alex\npcs: [pc-ada]\ncanon_changes:{listed}\n---\n")
+            f"finished: {finished}\nmod_runner: alex\npcs: [pc-ada]\n"
+            f"canon_changes:{listed}\n---\n")
         self.assertTrue(checked.ok, checked.text())
         return plotcanon.flagged_mods(loaded.world, checked.document)
 
@@ -309,7 +362,7 @@ class FlaggedMods(unittest.TestCase):
     def test_the_reports_own_mod_is_flagged_if_it_has_more_to_play(self):
         flagged = self.flagged_by(["the-baron"], [
             self.mod("the-hunt", "in-progress", "[the-baron]"),
-        ])
+        ], finished="false")
 
         self.assertEqual(flagged, ["the-hunt"])
 
@@ -328,7 +381,7 @@ class FlaggedMods(unittest.TestCase):
         world = plotcanon.load_world(files).world
         checked = plotcanon.check_file(
             world, "after-actions/e01/aa-the-hunt.md",
-            "---\nid: aa-the-hunt\ntype: after-action\nmod: the-hunt\nevent: e01\nran: true\n"
+            "---\nid: aa-the-hunt\ntype: after-action\nmod: the-hunt\nevent: e01\nran: true\nfinished: true\n"
             "mod_runner: alex\npcs: [pc-ada]\ncanon_changes:\n"
             "  - {entity: the-baron, kind: narrative, decision: proposed, summary: Left early.}\n"
             "---\n")

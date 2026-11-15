@@ -4,6 +4,7 @@ type: after-action
 mod: the-tax-collectors-ledger
 event: e03-storm-moon
 ran: true
+finished: false
 mod_runner: dev
 pcs: [pc-wren-halloway, pc-dask-orrin]
 canon_changes:

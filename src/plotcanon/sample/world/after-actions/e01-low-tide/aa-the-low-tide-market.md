@@ -4,6 +4,7 @@ type: after-action
 mod: the-low-tide-market
 event: e01-low-tide
 ran: true
+finished: true
 mod_runner: mira
 pcs: [pc-wren-halloway, pc-dask-orrin, pc-ilse-marrow]
 canon_changes:

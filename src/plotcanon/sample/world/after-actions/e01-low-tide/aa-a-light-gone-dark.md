@@ -4,6 +4,7 @@ type: after-action
 mod: a-light-gone-dark
 event: e01-low-tide
 ran: true
+finished: true
 mod_runner: mira
 pcs: [pc-ilse-marrow]
 canon_changes:

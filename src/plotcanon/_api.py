@@ -230,7 +230,8 @@ def flags(world, report):
     changes, in any Campaign of the World. Unfinished means the Mod still has
     play ahead of it: not finished and not shelved. That includes the report's
     own Mod when it has more to play, since what happened so far may affect
-    the rest of it.
+    the rest of it. A report that says it finished its Mod does not flag that
+    Mod, whatever state the Mod's file is still in.
 
     A Flag is raised when a change is proposed and stands once it is approved;
     it is for a person to dismiss. A rejected change did not happen, so it
@@ -250,8 +251,11 @@ def flags(world, report):
     not_raising = vocab["canon_change_decisions_raising_no_flag"]
     changes = report.fields.get("canon_changes")
     raised = []
+    ends_its_mod = (report.fields.get("finished") is True
+                    and report.fields.get("ran") is not False)
+    just_finished = report.fields.get("mod") if ends_its_mod else None
     for mod in world.of_type("mod"):
-        if mod.fields.get("state") not in unfinished:
+        if mod.fields.get("state") not in unfinished or mod.id == just_finished:
             continue
         features = mod.fields.get("features")
         featured = {entity for entities in (features.values() if isinstance(features, Mapping) else [])
@@ -278,7 +282,8 @@ class ScriptedReport:
     `path` is where the report goes in the World and `text` is the file.
     `flags` are the ids of the Mods it should flag. `contradicts` are the paths
     of other scripted reports that disagree with it about the same entity.
-    `interrupts` is true when the report stops a Mod that has more to play.
+    `interrupts` is true when the report stops a Mod that has more to play,
+    and `finishes` when it is the last report on its Mod.
     """
 
     path: str
@@ -287,6 +292,7 @@ class ScriptedReport:
     flags: tuple = ()
     contradicts: tuple = ()
     interrupts: bool = False
+    finishes: bool = False
 
 
 def _sample_files(folder):
@@ -338,6 +344,7 @@ def sample_script():
             flags=tuple(entry.get("flags") or ()),
             contradicts=tuple(entry.get("contradicts") or ()),
             interrupts=bool(entry.get("interrupts", False)),
+            finishes=bool(entry.get("finishes", False)),
         )
         for entry in manifest["reports"]
     ]

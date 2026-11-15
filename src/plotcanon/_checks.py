@@ -89,7 +89,7 @@ SCHEMAS = {
     },
     "after-action": {
         "dir": "after-actions",
-        "required": ["id", "type", "mod", "event", "ran", "mod_runner", "pcs",
+        "required": ["id", "type", "mod", "event", "ran", "finished", "mod_runner", "pcs",
                      "canon_changes"],
         "optional": [],
     },
@@ -165,8 +165,15 @@ class Change:
     def order(self):
         """Sort key. Reports at the same event are taken in id order, with
         numbers compared as numbers: `aa-<mod>`, `aa-<mod>-2`, `aa-<mod>-10`."""
-        parts = re.split(r"(\d+)", self.report_id)
-        return (self.ordinal, [int(p) if p.isdigit() else p for p in parts])
+        return (self.ordinal, natural_key(self.report_id))
+
+
+def natural_key(text):
+    """Sort key for an id that compares the numbers in it as numbers, so
+    `aa-x` comes before `aa-x-2` and that before `aa-x-10`. Only the digits 0
+    to 9 count; any other character is compared as text."""
+    return [int(part) if part.isascii() and part.isdigit() else part
+            for part in re.split(r"([0-9]+)", str(text))]
 
 
 @dataclass
@@ -445,12 +452,88 @@ def check_report_placement(doc, by_id, f):
     if not isinstance(doc.fm.get("pcs", []), list):
         f.error(doc.rel, "`pcs` must be a list of ids")
 
+    finished = doc.fm.get("finished")
+    if finished is not None and not isinstance(finished, bool):
+        shown = repr(finished) if isinstance(finished, str) and finished in ("true", "false") \
+            else finished
+        f.error(doc.rel, f"`finished: {shown}` must be true or false — true if this "
+                         f"report is the last on its mod, false if there is more to play")
+    if finished is True and doc.fm.get("ran") is False:
+        f.error(doc.rel, "`ran: false` with `finished: true` — a mod that did not run was "
+                         "not finished by this report. Say `finished: false`")
+    for single in ("mod", "event"):
+        if isinstance(doc.fm.get(single), (list, dict)):
+            f.error(doc.rel, f"`{single}` must be one id, not a list")
+
     # A mod lists every event it runs at, so a report can only be for one of those.
     mod_id = doc.fm.get("mod")
     mod = by_id.get(mod_id) if isinstance(mod_id, str) else None
     if ev and mod is not None and mod.type == "mod" and ev not in mod_events(mod):
         f.error(doc.rel, f"`event: {ev}` is not in the `events` of mod `{mod.id}` — "
                          f"add it there, or fix this report")
+
+
+def check_finished(docs, by_id, vocab, f):
+    """A mod's reports, read in order, against whether the mod is finished.
+
+    The report that says the mod is finished must be the last one. If another
+    report comes after it, both are in error: either may be the one just
+    submitted, so each is told about the other. And the mod's own `state`,
+    which a person sets, is compared with what its latest report says; a
+    disagreement is a warning on the mod, since the state is theirs to bring
+    up to date.
+
+    Reports are read by event, then by id (see `natural_key`). A report whose
+    event does not resolve has no place in that order and is left out; it is
+    already in error.
+    """
+    reports = {}
+    for doc in docs:
+        mod = by_id.get(doc.fm.get("mod")) if isinstance(doc.fm.get("mod"), str) else None
+        if doc.type != "after-action" or mod is None or mod.type != "mod":
+            continue
+        ordinal = ordinal_of(doc.fm.get("event"), by_id) \
+            if isinstance(doc.fm.get("event"), str) else None
+        if ordinal is not None:
+            reports.setdefault(mod.id, []).append(((ordinal, natural_key(doc.id)), doc))
+
+    unfinished = vocab["mod_states_unfinished"]
+    has_run = vocab["mod_states_that_have_run"]
+    for mod_id, filed in sorted(reports.items()):
+        filed = [doc for _order, doc in sorted(filed, key=lambda pair: pair[0])]
+        ended_by = None
+        for report in filed:
+            if ended_by is not None:
+                f.error(report.rel, f"mod `{mod_id}` was finished by `{ended_by.id}` — a "
+                                    f"finished mod cannot be reported on again. If there was "
+                                    f"more to play, `{ended_by.id}` should say `finished: false`")
+                f.error(ended_by.rel, f"says mod `{mod_id}` is finished, but `{report.id}` "
+                                      f"reports on it afterwards — only the last report on a "
+                                      f"mod can say `finished: true`")
+            elif finishes(report):
+                ended_by = report
+
+        if sum(1 for doc in docs if doc.id == mod_id) > 1:
+            continue  # Two documents claim this id; that is already an error.
+        mod, latest = by_id[mod_id], filed[-1]
+        state = mod.fm.get("state")
+        fix = "set the state to match, or correct the report"
+        if finishes(latest) and state in unfinished:
+            f.warn(mod.rel, f"`state: {state}`, but its latest report (`{latest.id}`) says "
+                            f"the mod is finished — {fix}")
+        elif latest.fm.get("finished") is False and state == vocab["mod_state_finished"]:
+            f.warn(mod.rel, f"`state: {state}`, but its latest report (`{latest.id}`) says "
+                            f"there is more to play — {fix}")
+        elif (latest.fm.get("finished") is False and latest.fm.get("ran") is True
+              and state in unfinished and state not in has_run):
+            f.warn(mod.rel, f"`state: {state}`, but its latest report (`{latest.id}`) says "
+                            f"it has been run and has more to play — {fix}")
+
+
+def finishes(report):
+    """Whether this report is the one that ends its mod. A mod that did not run
+    is not finished by the report that says so."""
+    return report.fm.get("finished") is True and report.fm.get("ran") is not False
 
 
 def collect_changes(docs, by_id, vocab, f):
@@ -756,6 +839,7 @@ def run_checks(files, head=None):
             check_report_placement(doc, by_id, f)
 
     check_events(docs, f)
+    check_finished(docs, by_id, vocab, f)
 
     changes = collect_changes(docs, by_id, vocab, f)
     changes_by_key = {}

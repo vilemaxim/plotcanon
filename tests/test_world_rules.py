@@ -163,6 +163,7 @@ type: after-action
 mod: the-ashen-vigil
 event: e03-thaw
 ran: true
+finished: true
 mod_runner: alex
 pcs: [pc-tomas-veil]
 canon_changes:
@@ -267,6 +268,7 @@ class ModsBelongToACampaign(ValidatorTest):
 class SeveralReports(ValidatorTest):
     def test_a_mod_can_have_reports_at_different_events(self):
         self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: false")
         self.write("canon/events/e03-thaw.md", THIRD_EVENT)
         self.edit(VIGIL, "events: [e02-hollow-night]",
                   "events: [e02-hollow-night, e03-thaw]")
@@ -279,6 +281,7 @@ class SeveralReports(ValidatorTest):
 
     def test_a_report_at_an_event_its_mod_does_not_list_is_an_error(self):
         self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: false")
         self.write("canon/events/e03-thaw.md", THIRD_EVENT)
         self.write("after-actions/e03-thaw/aa-the-ashen-vigil-2.md", SECOND_REPORT)
 
@@ -420,8 +423,10 @@ class Reports(ValidatorTest):
 
     def test_a_later_report_at_the_same_event_overrides_an_earlier_one(self):
         self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: false")
         self.write("after-actions/e02-hollow-night/aa-the-ashen-vigil-2.md",
                    SECOND_REPORT.replace("event: e03-thaw", "event: e02-hollow-night")
+                   .replace("finished: true", "finished: false")
                    .replace('kind: narrative', 'kind: status\n    from: missing\n    to: dead'))
         self.write("after-actions/e02-hollow-night/aa-the-ashen-vigil-10.md",
                    SECOND_REPORT.replace("event: e03-thaw", "event: e02-hollow-night")
@@ -608,6 +613,165 @@ class OldNames(ValidatorTest):
         self.assertEqual(result.returncode, 1)
         self.assertIn("unknown or missing `type`: 'adventure'", result.stdout)
         self.assertIn("unknown or missing `type`: 'thread'", result.stdout)
+
+
+
+class WhetherAModIsFinished(ValidatorTest):
+    """Every report says whether the Mod has more to play. The example Mod is
+    finished and its one report says so."""
+
+    def second_report(self, event="e03-thaw", finished="true"):
+        self.write("canon/events/e03-thaw.md", THIRD_EVENT)
+        self.edit(VIGIL, "events: [e02-hollow-night]", "events: [e02-hollow-night, e03-thaw]")
+        self.write(f"after-actions/{event}/aa-the-ashen-vigil-2.md",
+                   SECOND_REPORT.replace("event: e03-thaw", f"event: {event}")
+                   .replace("finished: true", f"finished: {finished}"))
+
+    def test_a_report_must_say_whether_the_mod_is_finished(self):
+        self.restore_examples()
+        self.edit(REPORT, "finished: true\n", "")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{REPORT}: missing required field `finished`", result.stdout)
+
+    def test_it_must_be_yes_or_no(self):
+        self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: mostly")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{REPORT}: `finished: mostly` must be true or false", result.stdout)
+
+    def test_a_report_after_the_one_that_finished_the_mod_is_an_error(self):
+        self.restore_examples()
+        self.second_report()
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("after-actions/e03-thaw/aa-the-ashen-vigil-2.md: mod `the-ashen-vigil` was "
+                      "finished by `aa-the-ashen-vigil`", result.stdout)
+
+    def test_that_holds_for_two_reports_at_the_same_event(self):
+        self.restore_examples()
+        self.second_report(event="e02-hollow-night", finished="false")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("after-actions/e02-hollow-night/aa-the-ashen-vigil-2.md: mod "
+                      "`the-ashen-vigil` was finished by `aa-the-ashen-vigil`", result.stdout)
+
+    def test_the_report_that_finished_it_is_told_too(self):
+        """Either report may be the one just submitted, so both are told."""
+        self.restore_examples()
+        self.second_report()
+
+        result = self.validate()
+
+        self.assertIn(f"{REPORT}: says mod `the-ashen-vigil` is finished, but "
+                      "`aa-the-ashen-vigil-2` reports on it afterwards", result.stdout)
+
+    def test_reports_are_read_in_order_of_event_before_id(self):
+        """A report at an earlier Event comes first, whatever it is called."""
+        self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: false")
+        self.edit(VIGIL, "events: [e02-hollow-night]", "events: [e01-first-frost, e02-hollow-night]")
+        self.write("after-actions/e01-first-frost/aa-the-ashen-vigil-9.md",
+                   SECOND_REPORT.replace("event: e03-thaw", "event: e01-first-frost")
+                   .replace("aa-the-ashen-vigil-2", "aa-the-ashen-vigil-9"))
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{REPORT}: mod `the-ashen-vigil` was finished by "
+                      "`aa-the-ashen-vigil-9`", result.stdout)
+
+    def test_a_mod_that_did_not_run_is_not_finished_by_that_report(self):
+        self.restore_examples()
+        self.edit(REPORT, "ran: true", "ran: false")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{REPORT}: `ran: false` with `finished: true`", result.stdout)
+
+    def test_a_mod_that_has_been_run_but_is_still_marked_as_not_begun_is_warned_about(self):
+        self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: false")
+        text = (self.root / VIGIL).read_text().replace("state: finished", "state: approved")
+        (self.root / VIGIL).write_text(text)
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(f"WARN   {VIGIL}: `state: approved`, but its latest report "
+                      "(`aa-the-ashen-vigil`) says it has been run and has more to play",
+                      result.stdout)
+
+    def test_an_interruption_followed_by_the_report_that_finishes_it_is_fine(self):
+        self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: false")
+        self.second_report()
+
+        result = self.validate()
+
+        self.assertIn("0 errors · 0 warnings", result.stdout)
+
+    def test_a_finished_mod_whose_latest_report_says_there_is_more_is_warned_about(self):
+        self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: false")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(f"WARN   {VIGIL}: `state: finished`, but its latest report "
+                      "(`aa-the-ashen-vigil`) says there is more to play", result.stdout)
+
+    def test_an_unfinished_mod_whose_latest_report_finished_it_is_warned_about(self):
+        self.restore_examples()
+        self.edit(VIGIL, "state: finished", "state: in-progress")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(f"WARN   {VIGIL}: `state: in-progress`, but its latest report "
+                      "(`aa-the-ashen-vigil`) says the mod is finished", result.stdout)
+
+    def test_an_id_with_an_unusual_digit_in_it_is_reported_not_crashed_on(self):
+        self.restore_examples()
+        text = (self.root / REPORT).read_text().replace("id: aa-the-ashen-vigil",
+                                                        "id: aa-1\u00b22")
+        (self.root / REPORT).unlink()
+        self.write("after-actions/e02-hollow-night/aa-1\u00b22.md", text)
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("is not a clean slug", result.stdout)
+
+    def test_a_report_must_be_on_one_mod(self):
+        self.restore_examples()
+        self.edit(REPORT, "mod: the-ashen-vigil", "mod: [the-ashen-vigil]")
+
+        result = self.validate()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{REPORT}: `mod` must be one id, not a list", result.stdout)
+
+    def test_a_shelved_mod_is_left_alone_whatever_its_reports_say(self):
+        self.restore_examples()
+        self.edit(REPORT, "finished: true", "finished: false")
+        text = (self.root / VIGIL).read_text().replace("state: finished", "state: shelved")
+        (self.root / VIGIL).unlink()
+        self.write("mods/shelved/the-ashen-vigil.md", text)
+
+        result = self.validate()
+
+        self.assertNotIn("says there is more to play", result.stdout)
 
 
 if __name__ == "__main__":

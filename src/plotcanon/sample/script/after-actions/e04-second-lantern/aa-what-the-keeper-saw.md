@@ -4,6 +4,7 @@ type: after-action
 mod: what-the-keeper-saw
 event: e04-second-lantern
 ran: true
+finished: true
 mod_runner: sam
 pcs: [pc-bram-tolliver, pc-noor-calder]
 canon_changes:

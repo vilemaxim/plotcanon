@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.2.1"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.3.0"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.2.1"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.3.0"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -99,7 +99,7 @@ for flag in plotcanon.flags(world, report.document):
 
 Three points about the rule:
 
-- The report's own Mod is flagged too when it has more to play, because what happened so far may change the rest of it.
+- The report's own Mod is flagged too when it has more to play, because what happened so far may change the rest of it. A report that says `finished: true` does not flag the Mod it just finished.
 - A proposed or approved change raises Flags; a rejected one raises none, since it did not happen.
 - Only the entity a change names counts. When an NPC moves, the place they moved to is not treated as changed.
 
@@ -120,10 +120,10 @@ for scripted in plotcanon.sample_script():
 | Report | What it shows |
 |---|---|
 | `aa-the-tax-collectors-ledger-2` | A Mod interrupted for the second time, and a Flag that crosses into the other Campaign. |
-| `aa-blood-on-the-salt-stair` | Says an NPC died. Also flags a draft still in the inbox. |
-| `aa-storm-moon-vigil` | Run at the same hour, and says the same NPC left alive. The two contradict each other. |
-| `aa-storm-moon-vigil-2` | A second report on one Mod at one Event. It flags nothing. |
-| `aa-what-the-keeper-saw` | From the other Campaign. The only Mod it flags is its own. |
+| `aa-blood-on-the-salt-stair` | Finishes its Mod. Says an NPC died. Also flags a draft still in the inbox. |
+| `aa-storm-moon-vigil` | Run at the same hour, and says the same NPC left alive. The two contradict each other. An interruption, so it flags its own Mod. |
+| `aa-storm-moon-vigil-2` | The second report on that Mod at the same Event, and the one that finishes it. It flags nothing. |
+| `aa-what-the-keeper-saw` | From the other Campaign. Finishes its Mod and flags nothing. |
 
 To get the files on disk, for a larp-llm repo or to read them, run `plotcanon sample --write demo/ --script demo-script/`.
 

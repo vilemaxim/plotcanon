@@ -4,6 +4,7 @@ type: after-action
 mod: storm-moon-vigil
 event: e03-storm-moon
 ran: true
+finished: false
 mod_runner: mira
 pcs: [pc-ilse-marrow]
 canon_changes:
@@ -32,6 +33,8 @@ The brother opened the crypt at the third hour. The physician and the sister clo
 The mod did not expect anyone to be watching the harbour mouth.
 
 ## Loose Ends
+
+- The vigil is not over: getting everyone back off the reef is still to play.
 
 - Who was in the boat. The physician is sure it was the smuggler.
 - The crypt is closed but no longer sealed.

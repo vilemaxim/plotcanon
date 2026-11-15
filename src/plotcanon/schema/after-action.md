@@ -28,9 +28,30 @@ two payoffs.
 | `mod` | ● | id | The mod this reports on. |
 | `event` | ● | event-id | The event this stretch of play happened at. Must be in the mod's `events`. |
 | `ran` | ● | bool | `false` = scheduled but did not happen. Record it anyway; a mod that did not run is information. |
+| `finished` | ● | bool | `true` if the mod has nothing left to play after this stretch; `false` if play stopped with more to come. See below. |
 | `mod_runner` | ● | text | Who ran this stretch of the mod and is reporting on it. |
 | `pcs` | ● | id[] | The PCs who took part. Empty list if `ran: false`. The roster stays authoritative — this is presence at this mod, not a roster edit. |
 | `canon_changes` | ● | list | The changes to canon this report proposes. See below. Empty list is valid. |
+
+## `finished`
+
+A report is filed every time play stops, so on its own it does not say whether
+the mod is over. `finished` does. `false` means this was an interruption: the
+mod is in progress and another report will follow. `true` means this is the
+last report on the mod.
+
+- **The report that finishes a mod is its last.** A later report on the same
+  mod is an error, reported on both: either could be the one that is wrong.
+  If more was played after all, the earlier report was not the end, and
+  should say `finished: false`. Reports are read in order of event, then id.
+- **The mod's own `state` is still set by a person.** Filing a report does not
+  change it. The validator warns on the mod when its state and its latest
+  report disagree: the report says the mod is finished and the state does not;
+  the state says finished and the report says there is more to play; or the
+  report says the mod has been run and the state says it has not begun. A
+  shelved mod is left alone, whatever its reports say.
+- **A mod that did not run is not finished by saying so.** `ran: false` with
+  `finished: true` is an error.
 
 ## `canon_changes`
 
@@ -103,6 +124,7 @@ type: after-action
 mod: the-ashen-vigil
 event: e08-harvest-mourn
 ran: true
+finished: true
 mod_runner: alex
 pcs: [pc-tomas-veil, pc-sara-korr]
 canon_changes:

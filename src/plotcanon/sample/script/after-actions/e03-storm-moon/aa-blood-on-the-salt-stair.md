@@ -4,6 +4,7 @@ type: after-action
 mod: blood-on-the-salt-stair
 event: e03-storm-moon
 ran: true
+finished: true
 mod_runner: dev
 pcs: [pc-dask-orrin, pc-wren-halloway]
 canon_changes:

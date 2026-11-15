@@ -4,6 +4,7 @@ type: after-action
 mod: the-ferrymans-price
 event: e02-first-lantern
 ran: true
+finished: true
 mod_runner: sam
 pcs: [pc-bram-tolliver, pc-noor-calder]
 canon_changes:

@@ -148,6 +148,10 @@ mod_state_dirs:
 # mod in one of these states that features the entity it changes.
 mod_states_unfinished: [draft, approved, in-progress]
 
+# The state of a mod with nothing left to play. A report with `finished: true`
+# is saying its mod should be in this state.
+mod_state_finished: finished
+
 # A change with one of these decisions flags nothing: it did not happen.
 canon_change_decisions_raising_no_flag: [rejected]
 
