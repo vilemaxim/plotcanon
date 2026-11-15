@@ -248,7 +248,9 @@ class Flag:
 
 
 def flags(world, report):
-    """The Flags a report's canon changes raise.
+    """The Flags a report's canon changes raise. `report` may also be a record
+    of changes made during an Interlude (`interlude-changes`), which has no
+    mod of its own and so finishes none.
 
     A canon change flags every unfinished Mod that features the entity it
     changes, in any Campaign of the World. Unfinished means the Mod still has

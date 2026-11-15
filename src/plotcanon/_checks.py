@@ -21,7 +21,7 @@ import yaml
 
 # Directories whose .md files are validated. Everything else (lore/, schema/,
 # .claude/, root docs) is deliberately unschema'd prose.
-SCAN_DIRS = ["canon", "inbox", "mods", "after-actions", "generated"]
+SCAN_DIRS = ["canon", "inbox", "mods", "after-actions", "interludes", "generated"]
 
 
 def is_scanned(rel):
@@ -94,6 +94,11 @@ SCHEMAS = {
                      "canon_changes"],
         "optional": [],
     },
+    "interlude-changes": {
+        "dir": "interludes",
+        "required": ["id", "type", "event", "recorded_by", "canon_changes"],
+        "optional": [],
+    },
 }
 
 # Which fields hold id references, and what they may point at.
@@ -110,7 +115,12 @@ REFS = {
     "timeline": {"event": ["event"]},
     "mod":      {"campaign": ["campaign"], "events": ["event"], "supersedes": ["mod"]},
     "after-action": {"mod": ["mod"], "event": ["event"], "pcs": ["pc"]},
+    "interlude-changes": {"event": ["event"]},
 }
+
+# The documents that carry canon changes: a Mod Runner's report on play, and a
+# record of what changed during an Interlude, with no mod run.
+CHANGE_SOURCES = ("after-action", "interlude-changes")
 
 # mods/<this>/ holds shelved mods, so no campaign may use it as its id.
 SHELVED_DIR = "shelved"
@@ -748,6 +758,23 @@ def yes_or_no(doc, field, meaning, f):
     f.error(doc.rel, f"`{field}: {shown}` must be true or false — {meaning}")
 
 
+def check_interlude_placement(doc, by_id, f):
+    """Canon changes made during an Interlude live under it, and name an event
+    that is an Interlude: changes at a gathering of play come from its mods'
+    reports."""
+    ev = doc.fm.get("event")
+    if not isinstance(ev, str):
+        return
+    if doc.parent != f"interludes/{ev}":
+        f.error(doc.rel, f"must live in interludes/{ev}/, not {doc.parent}/")
+    event = by_id.get(ev)
+    if event is not None and event.type == "event" \
+            and event.fm.get("period_type") != "interlude":
+        f.error(doc.rel, f"`event: {ev}` is not an Interlude (its `period_type` is "
+                         f"{event.fm.get('period_type')}). Changes at a gathering of play "
+                         f"are recorded in its mods' after-action reports")
+
+
 def check_report_placement(doc, by_id, f):
     parent = doc.parent
     ev = doc.fm.get("event")
@@ -847,7 +874,7 @@ def collect_changes(docs, by_id, vocab, f):
     out = []
 
     for doc in docs:
-        if doc.type != "after-action":
+        if doc.type not in CHANGE_SOURCES:
             continue
         changes = doc.fm.get("canon_changes")
         if changes is None:
@@ -1146,6 +1173,8 @@ def run_checks(files, head=None):
             check_mod_placement(doc, vocab, by_id, f)
         elif doc.type == "after-action":
             check_report_placement(doc, by_id, f)
+        elif doc.type == "interlude-changes":
+            check_interlude_placement(doc, by_id, f)
 
     check_events(docs, f)
     check_finished(docs, by_id, vocab, f)

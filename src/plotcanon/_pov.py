@@ -152,6 +152,37 @@ def build(files, entity_id):
                 "slot": 0,
                 "reports": [record],
             })
+    # ── Changes made during an Interlude, with no mod ──────────────────────
+    for doc in docs:
+        if doc.type != "interlude-changes":
+            continue
+        mine = [d for d in (doc.fm.get("canon_changes") or [])
+                if isinstance(d, dict) and d.get("entity") == entity_id]
+        if not mine:
+            continue
+        ev = doc.fm.get("event")
+        ordinal = ordinal_of(ev, by_id)
+        loose.append({
+            "kind": "interlude-changes",
+            "id": doc.id,
+            "path": doc.rel,
+            "title": f"Changed during the Interlude `{ev}`",
+            "event": ev,
+            "ordinal": ordinal if ordinal is not None else PRE_CAMPAIGN_ORD,
+            "slot": 0,
+            "reports": [{
+                "source": doc.rel, "id": str(doc.id), "event": ev, "ordinal": ordinal,
+                "ran": None, "mod_runner": doc.fm.get("recorded_by"), "attended": False,
+                "canon_changes": [
+                    {"kind": d.get("kind"), "decision": d.get("decision"),
+                     "in_canon": d.get("decision") == in_canon,
+                     "from": d.get("from"), "to": d.get("to"),
+                     "summary": d.get("summary")}
+                    for d in mine],
+                "divergences": None,
+                "verb": "Recorded during the Interlude",
+            }],
+        })
     items.extend(loose)
     for i in items:
         i["reports"].sort(key=lambda r: (r["ordinal"] if r["ordinal"] is not None
@@ -176,8 +207,9 @@ def emit_markdown(subject, items, backlinks, by_id, head, out):
     p(f"# Retrieval bundle — `{subject.id}` ({subject.type})")
     p("")
     p("Everything canon records about this entity, in chronological order.")
-    p("This is a complete, mechanical query over feature links and after-action")
-    p("canon changes. It is not a summary and nothing has been judged.")
+    p("This is a complete, mechanical query over feature links and the canon")
+    p("changes in after-action reports and Interludes. It is not a summary and")
+    p("nothing has been judged.")
     p("")
     p(f"- `generated_from_commit`: {head or 'unknown'}")
     p(f"- aliases: {', '.join(str(a) for a in (subject.fm.get('aliases') or []))}")
@@ -232,7 +264,7 @@ def emit_markdown(subject, items, backlinks, by_id, head, out):
                   f"no canon changes recorded.")
                 p("")
                 continue
-            p(f"**Reported at `{rec['event']}`** (`{rec['source']}`):")
+            p(f"**{rec.get('verb', 'Reported at')} `{rec['event']}`** (`{rec['source']}`):")
             if rec["ran"] is False:
                 p("- mod did not run")
             for d in rec["canon_changes"]:

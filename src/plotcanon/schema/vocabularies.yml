@@ -119,6 +119,7 @@ bindings:
   timeline:     {canon: canon,             visibility: visibility, era: era}
   mod:          {state: mod_state,         canon: canon, visibility: visibility}
   after-action: {}
+  interlude-changes: {}
 
 # The decision that makes a canon change part of canon. Only changes with this
 # decision are expected to match the entity's file.

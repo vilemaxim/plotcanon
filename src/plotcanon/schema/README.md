@@ -15,6 +15,7 @@ fixed body headings, and a worked example.
 | `timeline` | [timeline.md](timeline.md) | `canon/timeline/` |
 | `mod` | [mod.md](mod.md) | `inbox/`, `mods/<campaign-id>/`, `mods/shelved/` |
 | `after-action` | [after-action.md](after-action.md) | `after-actions/<event-id>/` |
+| `interlude-changes` | [interlude-changes.md](interlude-changes.md) | `interludes/<event-id>/` |
 
 Allowed values for every enum field are in [vocabularies.yml](vocabularies.yml),
 which is the single source of truth. These docs deliberately do not restate them.

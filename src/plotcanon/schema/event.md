@@ -30,7 +30,8 @@ A cancelled event **keeps its ordinal**. Renumbering would silently rewrite the
 ordering of every document that references a later event.
 
 Interludes take their own ordinal in sequence, so an interlude sorts correctly
-between the events it sits between.
+between the events it sits between. Canon changed during an interlude, with no
+mod run, is recorded in an [interlude-changes](interlude-changes.md) document.
 
 ## Body
 
