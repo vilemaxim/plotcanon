@@ -51,7 +51,7 @@ Add sections if you need them; do not rename or drop the listed ones. Empty is
 fine, missing is not.
 
 **`## GM Notes` is the secret section.** By convention it is stripped from
-anything handed to a player or to an author outside the plot team. Do not put
+anything handed to a player or to a Mod Writer outside the plot team. Do not put
 secrets anywhere else in the body.
 
 ## Field types used below

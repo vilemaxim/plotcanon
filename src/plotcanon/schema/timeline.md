@@ -1,7 +1,7 @@
 # `timeline`
 
 `canon/timeline/<id>.md`. A dated occurrence that **has no owning mod** —
-a world event, an off-event resolution, a death between games, a piece of
+a world event, an off-event resolution, a death between events, a piece of
 history.
 
 ## What does not go here
@@ -21,7 +21,7 @@ everything else at that event.
 
 **Pre-campaign** — set `era` and optionally `sort_hint`. These order relative to
 *each other* only. They are explicitly unordered against campaign events, because
-your setting's in-world time is vague and pretending otherwise would invent
+your world's in-world time is vague and pretending otherwise would invent
 precision that does not exist.
 
 Exactly one of the two is required. Setting both is an error.
@@ -52,7 +52,7 @@ through these links.
 
 ## Examples
 
-On the clock — something that happened during downtime, with no mod:
+On the clock — something that happened during an interlude, with no mod:
 
 ```markdown
 ---

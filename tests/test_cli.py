@@ -118,6 +118,17 @@ class Validate(CommandTest):
         self.assertIn("WARN   schema/vocabularies.yml: differs from the schema this version "
                       "of plotcanon validates against", result.stdout)
 
+    def test_a_stale_schema_doc_is_warned_about_too(self):
+        self.plotcanon("schema", "--write", "schema")
+        with open(self.root / "schema/mod.md", "a") as f:
+            f.write("\nA note added by hand.\n")
+        (self.root / "schema/plot.md").unlink()
+
+        result = self.plotcanon("validate")
+
+        self.assertIn("WARN   schema/mod.md: differs from the schema", result.stdout)
+        self.assertIn("WARN   schema/plot.md: is missing from this copy of the schema", result.stdout)
+
 
 class Pov(CommandTest):
     def test_it_lists_what_canon_records_about_an_entity(self):
@@ -159,6 +170,72 @@ class Sample(CommandTest):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("is not empty", result.stderr)
+
+
+class Words(CommandTest):
+    def test_it_names_each_avoided_word_and_the_file_it_is_in(self):
+        (self.root / "notes.md").write_text("Ask the plot lead.\nThe author agreed.\n")
+        (self.root / "fine.md").write_text("Ask the Plot Master.\n")
+
+        result = self.plotcanon("words", "notes.md", "fine.md")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout.splitlines(), [
+            "notes.md:1: 'plot lead' (use Plot Master)",
+            "notes.md:2: 'author' (use Mod Writer)",
+        ])
+
+    def test_clean_files_pass(self):
+        (self.root / "fine.md").write_text("Ask the Plot Master.\n")
+
+        result = self.plotcanon("words", "fine.md")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+
+    def test_a_folder_is_searched_for_markdown(self):
+        (self.root / "docs/deep").mkdir(parents=True)
+        (self.root / "docs/deep/notes.md").write_text("A new arc.\n")
+
+        result = self.plotcanon("words", "docs")
+
+        self.assertEqual(result.stdout.splitlines(), ["docs/deep/notes.md:1: 'arc' (use Plot)"])
+
+    def test_a_path_that_does_not_exist_is_refused(self):
+        result = self.plotcanon("words", "nowhere.md")
+
+        self.assertEqual(result.returncode, 2)
+
+    def test_a_phrase_broken_across_two_lines_is_found_on_the_line_it_starts(self):
+        (self.root / "notes.md").write_text("First line.\nSo ask the plot\nlead about it.\n")
+
+        result = self.plotcanon("words", "notes.md")
+
+        self.assertEqual(result.stdout.splitlines(), ["notes.md:2: 'plot lead' (use Plot Master)"])
+
+    def test_a_file_named_twice_is_checked_once(self):
+        (self.root / "docs").mkdir()
+        (self.root / "docs/notes.md").write_text("A new arc.\n")
+
+        result = self.plotcanon("words", "docs", "docs/notes.md")
+
+        self.assertEqual(len(result.stdout.splitlines()), 1)
+
+    def test_a_file_that_is_not_text_is_named(self):
+        (self.root / "blob.md").write_bytes(b"\xff\xfe\x00")
+
+        result = self.plotcanon("words", "blob.md")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("blob.md is not UTF-8 text", result.stderr)
+
+    def test_a_path_outside_the_root_is_refused(self):
+        outside = Path(tempfile.mkdtemp()) / "notes.md"
+        outside.write_text("A new arc.\n")
+
+        result = self.plotcanon("words", str(outside))
+
+        self.assertEqual(result.returncode, 2)
 
 
 class Schema(CommandTest):

@@ -287,10 +287,10 @@ def check_enums(doc, vocab, f):
 
 
 def is_submission(doc):
-    """A mod in inbox/ carries ids invented by an author outside this repo.
+    """A mod in inbox/ carries ids invented by a Mod Writer outside this repo.
 
-    Authors cannot see canon and are told to make slugs up
-    (`prompts/author-intake.md`), so unresolved references in a submission are
+    Mod Writers cannot see canon and are told to make slugs up
+    (larp-llm's `prompts/mod-writer-intake.md`), so unresolved references in a submission are
     its expected state, not a defect — mapping them is exactly what the
     reconciler is for. Erroring would put the whole repo in a failing state the
     moment a mod landed, blocking every commit until reconciliation finished.
@@ -314,7 +314,7 @@ def resolve(value, allowed_types, by_id, doc, fieldname, f):
     target = by_id.get(value)
     if target is None:
         if is_submission(doc):
-            f.warn(doc.rel, f"`{fieldname}: {value}` does not resolve — author's "
+            f.warn(doc.rel, f"`{fieldname}: {value}` does not resolve — the Mod Writer's "
                             f"slug, to be mapped at intake")
         else:
             f.error(doc.rel, f"`{fieldname}: {value}` does not resolve to any document")
@@ -428,15 +428,15 @@ def check_mod_placement(doc, vocab, by_id, f):
                              f"but this mod belongs to `{campaign}`")
 
     # A submission is not canon, whatever its frontmatter claims. Mods arrive
-    # from authors outside this repo, so `canon` is the plot lead's to set — an
-    # author who writes `approved` must not be believed.
+    # from Mod Writers outside this repo, so `canon` is the Plot Master's to set — a
+    # Mod Writer who writes `approved` must not be believed.
     if parent == "inbox" and doc.fm.get("canon") != "proposed":
         f.error(doc.rel, f"`canon: {doc.fm.get('canon')}` in inbox/ — a submitted "
                          f"mod must be `proposed`. Set it at intake; never "
-                         f"take an author's word for it.")
+                         f"take a Mod Writer's word for it.")
 
 
-def check_aar_placement(doc, by_id, f):
+def check_report_placement(doc, by_id, f):
     parent = doc.parent
     ev = doc.fm.get("event")
     if ev and parent != f"after-actions/{ev}":
@@ -609,7 +609,7 @@ def check_preconditions(docs, by_id, changes_by_key, f):
             if ent not in by_id:
                 if is_submission(doc):
                     f.warn(doc.rel, f"{where} `entity: {ent}` does not resolve — "
-                                    f"author's slug, to be mapped at intake")
+                                    f"the Mod Writer's slug, to be mapped at intake")
                 else:
                     f.error(doc.rel, f"{where} `entity: {ent}` does not resolve")
                 continue
@@ -753,7 +753,7 @@ def run_checks(files, head=None):
         elif doc.type == "mod":
             check_mod_placement(doc, vocab, by_id, f)
         elif doc.type == "after-action":
-            check_aar_placement(doc, by_id, f)
+            check_report_placement(doc, by_id, f)
 
     check_events(docs, f)
 

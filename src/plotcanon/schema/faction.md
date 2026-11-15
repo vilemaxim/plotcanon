@@ -23,7 +23,7 @@ a guild, a warband, a town council.
 | `tags` | ○ | text[] | |
 
 `fractured` earns its place: a faction that still exists but no longer acts with
-one voice is a common and very usable plot state, and collapsing it into
+one voice is a common and very usable state for a story, and collapsing it into
 `active` or `disbanded` loses the thing that makes it interesting.
 
 `members` lists NPCs worth naming. PC membership is not tracked here — PCs join

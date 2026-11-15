@@ -1,6 +1,6 @@
 # `event` — the campaign clock
 
-`canon/events/<id>.md`. One file per game event or interlude. **This is the only
+`canon/events/<id>.md`. One file per event or interlude. **This is the only
 place in the repo where time is defined.** Everything else references an event id
 and inherits its timing.
 
@@ -19,17 +19,17 @@ does not exist yet.
 | `type` | ● | `event` | |
 | `campaign` | ● | id | `canon/campaigns/`. The campaign this event is part of. |
 | `ordinal` | ● | int | **The canonical sort key.** Unique and gapless across all events in the world, whatever their campaign. |
-| `period_type` | ● | `enum:period_type` | `event` for a game, `interlude` for a downtime period. |
-| `aliases` | ● | text[] | Display names. Include the plain form authors will say out loud, e.g. `"Event 8"`. |
+| `period_type` | ● | `enum:period_type` | `event` for a gathering of play, `interlude` for the period between two. |
+| `aliases` | ● | text[] | Display names. Include the plain form Mod Writers will say out loud, e.g. `"Event 8"`. |
 | `real_date` | ● | date | First day. |
 | `real_date_end` | ○ | date | Last day. Omit for single-day events and interludes. |
-| `in_world` | ● | text | Free text, and **authoritative**. Your setting has no hard calendar, so this is a phrase, not a date. |
+| `in_world` | ● | text | Free text, and **authoritative**. Your world has no hard calendar, so this is a phrase, not a date. |
 | `status` | ● | `enum:event_status` | |
 
 A cancelled event **keeps its ordinal**. Renumbering would silently rewrite the
 ordering of every document that references a later event.
 
-Interludes take their own ordinal in sequence, so downtime sorts correctly
+Interludes take their own ordinal in sequence, so an interlude sorts correctly
 between the events it sits between.
 
 ## Body
@@ -62,7 +62,7 @@ the weekend.
 
 ## GM Notes
 
-Varen's reveal is scheduled here. Do not let an author burn it earlier.
+Varen's reveal is scheduled here. Do not let a Mod Writer burn it earlier.
 ```
 
 An interlude, for comparison:
@@ -74,7 +74,7 @@ type: event
 campaign: greymoor
 ordinal: 9
 period_type: interlude
-aliases: ["The Long Frost", "downtime after Harvest Mourn"]
+aliases: ["The Long Frost", "the weeks after Harvest Mourn"]
 real_date: 2026-10-20
 in_world: "the first hard frost"
 status: complete

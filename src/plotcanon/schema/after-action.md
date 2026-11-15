@@ -1,6 +1,6 @@
 # `after-action`
 
-`after-actions/<event-id>/<id>.md`. A mod runner's account of what happened
+`after-actions/<event-id>/<id>.md`. A Mod Runner's account of what happened
 during **one continuous stretch of playing a mod**, recorded as a list of
 proposed **canon changes**.
 
@@ -91,8 +91,8 @@ freely; one line each.
 `## What Happened` · `## Divergences From The Mod` · `## Loose Ends`
 
 - **`## Divergences From The Mod`** — compare against the mod's
-  `expected_changes`. This is the section the master-plot pass reads.
-- **`## Loose Ends`** — hooks the game generated that nobody has written yet.
+  `expected_changes`. This is the section a review across plots reads.
+- **`## Loose Ends`** — hooks that came up in play and that nobody has written yet.
 
 ## Example
 

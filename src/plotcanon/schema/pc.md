@@ -28,7 +28,7 @@ If you find yourself wanting a status field here, what you actually want is
 | `type` | ● | `pc` | |
 | `aliases` | ● | text[] | Character name and any in-world titles. Not the player's name. |
 | `player` | ● | text | Player handle — enough to know who to ask. Not contact details. |
-| `factions` | ○ | id[] | In-world affiliations that matter to plot. |
+| `factions` | ○ | id[] | In-world affiliations that matter to the story. |
 | `canon` | ● | `enum:canon` | |
 | `visibility` | ● | `enum:visibility` | |
 | `tags` | ○ | text[] | |
@@ -39,14 +39,14 @@ If you find yourself wanting a status field here, what you actually want is
 
 Keep all three short.
 
-- **`## Summary`** — two or three sentences, as much as an author needs to write
-  this character into a mod. Not a biography.
-- **`## Plot Hooks`** — what this character is chasing, owed, or afraid of. This
-  is the section authors actually read.
+- **`## Summary`** — two or three sentences, as much as a Mod Writer needs to write
+  this PC into a mod. Not a biography.
+- **`## Plot Hooks`** — what this PC is chasing, owed, or afraid of. This
+  is the section Mod Writers actually read.
 - **`## GM Notes`** — anything the plot team knows that the player has not
   established in play.
 
-Do not write the character's history here. It accumulates in after-actions.
+Do not write the PC's history here. It accumulates in after-actions.
 
 ## Example
 

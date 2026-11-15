@@ -1,6 +1,6 @@
 # `location`
 
-`canon/locations/<id>.md`. Anywhere plot happens or that plot is about. Create
+`canon/locations/<id>.md`. Anywhere play happens or that a mod is about. Create
 one when somewhere gets referenced by more than one mod, or when who controls
 it can change.
 
@@ -22,7 +22,7 @@ it can change.
 | `tags` | ○ | text[] | |
 
 `contested` is the value that does real work — it says control is actively
-disputed right now, which is exactly the state an author needs to know about
+disputed right now, which is exactly the state a Mod Writer needs to know about
 before setting a mod there.
 
 `ruined` is still somewhere you can go. `lost` is not.

@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.2.0"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.2.1"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.2.0"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.2.1"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -64,6 +64,7 @@ Errors mean the file is not valid. Warnings are for a person to judge and do not
 | `sample_world()` | A ready-made World, as `{path: text}`. |
 | `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
 | `vocabularies()` | The allowed values for every enum field. |
+| `avoided_words(text)` | Uses in a text of words the shared glossary says to avoid, each with the term to use instead. For checking docs and prompts. |
 | `schema_files()` | The schema docs and `vocabularies.yml`, as shipped. |
 
 ## Use it from the command line
@@ -75,6 +76,7 @@ plotcanon validate --strict          # treat warnings as errors
 plotcanon pov varen-ashcroft         # everything canon records about one entity
 plotcanon schema --write schema/     # copy the schema docs into a World
 plotcanon sample --write demo/       # copy the sample World to disk
+plotcanon words README.md docs/      # check wording against the shared glossary
 ```
 
 Add `--root DIR` to work on a World somewhere else. `validate` exits 0 when the World is clean, 1 when it has errors (or warnings, with `--strict`), and 2 when the command could not run.

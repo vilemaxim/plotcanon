@@ -1,8 +1,7 @@
 # `plot`
 
-`canon/plots/<id>.md`. A narrative through-line. **An arc is a plot** — there
-is no separate arc type. A plot lists the mods that advance it in `mods:`, in
-order. A plot belongs to the world, so its mods can come from any campaign.
+`canon/plots/<id>.md`. A narrative through-line that runs across several mods.
+A plot lists the mods that advance it in `mods:`, in order. A plot belongs to the world, so its mods can come from any campaign.
 
 ## Frontmatter
 
@@ -14,22 +13,22 @@ order. A plot belongs to the world, so its mods can come from any campaign.
 | `status` | ● | `enum:plot_status` | |
 | `as_of` | ● | event-id | |
 | `entities` | ○ | id[] | The NPCs, factions and locations this plot turns on. |
-| `mods` | ○ | id[] | Mods that advance it, **in intended order**. This is how an arc is expressed. |
+| `mods` | ○ | id[] | Mods that advance it, **in intended order**. |
 | `canon` | ● | `enum:canon` | |
 | `visibility` | ● | `enum:visibility` | |
 | `owner` | ○ | text | Who is steering this plot. |
 | `tags` | ○ | text[] | |
 
 `dormant` is the important value: not closed, nothing currently advancing it,
-free for an author to pick up. `abandoned` means it will not conclude — do not
+free for a Mod Writer to pick up. `abandoned` means it will not conclude — do not
 build on it. `resolved` means reopening is a deliberate act, not an oversight.
 
 ## Body
 
 `## Premise` · `## Current State` · `## Where It Could Go` · `## GM Notes`
 
-`## Where It Could Go` is written for other authors. It is the main place the
-master-plot pass looks for weaving opportunities.
+`## Where It Could Go` is written for other Mod Writers. It is the main place a review
+across plots looks for weaving opportunities.
 
 ## Example
 
@@ -37,7 +36,7 @@ master-plot pass looks for weaving opportunities.
 ---
 id: siege-of-greymoor
 type: plot
-aliases: ["The Siege of Greymoor", "the Greymoor arc"]
+aliases: ["The Siege of Greymoor", "the Greymoor plot"]
 status: open
 as_of: e08-harvest-mourn
 entities: [varen-ashcroft, sister-oleen, ashen-order, greymoor-chapel]
@@ -62,7 +61,7 @@ acknowledged this out loud.
 
 - The council splits over whether to contest the chapel. Good talky mod.
 - Whoever reads the chapel register learns which councillors already signed.
-- Varen is loose and hunted by both sides. Available to any author who wants him.
+- Varen is loose and hunted by both sides. Available to any Mod Writer who wants him.
 
 ## GM Notes
 

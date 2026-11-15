@@ -7,9 +7,11 @@
     plotcanon pov varen-ashcroft        # everything canon records about one entity
     plotcanon schema --write schema/    # copy the schema docs into a World
     plotcanon sample --write demo/      # copy the sample World to disk
+    plotcanon words README.md docs/     # check wording against the glossary
 
 Every command takes `--root DIR` to work on a World somewhere else. Paths given
-to `validate` are relative to where you are; `--write` is relative to the root.
+to `validate` are relative to where you are; paths given to `words`, `--write`
+and `--script` are relative to the root.
 
 Exit codes: 0 clean, 1 the World has problems, 2 the command could not run.
 """
@@ -24,6 +26,7 @@ from importlib import resources
 from pathlib import Path
 
 from . import _pov
+from ._wording import find_avoided
 from ._api import (
     Finding, WARNING, load_world, read_directory, sample_script, sample_world, schema_files,
 )
@@ -51,12 +54,21 @@ def stale_schema_copy(root):
     """A World may keep a copy of the schema docs for people and agents to read.
     Warn when that copy is not the one this version of the package validates
     against, because then the docs describe rules that are not being applied."""
-    copy = root / "schema" / VOCAB_FILE
-    if not copy.exists() or copy.read_text(encoding="utf-8") == schema_files()[VOCAB_FILE]:
+    copy = root / "schema"
+    if not (copy / VOCAB_FILE).exists():
         return []
-    return [Finding(WARNING, f"schema/{VOCAB_FILE}",
-                    "differs from the schema this version of plotcanon validates "
-                    "against — refresh the copy with `plotcanon schema --write schema/`")]
+    refresh = "refresh the copy with `plotcanon schema --write schema/`"
+    stale = []
+    for name, shipped in schema_files().items():
+        path = copy / name
+        if not path.exists():
+            stale.append(Finding(WARNING, f"schema/{name}",
+                                 f"is missing from this copy of the schema — {refresh}"))
+        elif path.read_text(encoding="utf-8") != shipped:
+            stale.append(Finding(WARNING, f"schema/{name}",
+                                 "differs from the schema this version of plotcanon "
+                                 f"validates against — {refresh}"))
+    return stale
 
 
 def validate(args):
@@ -154,6 +166,32 @@ def sample(args):
     return 0
 
 
+def words(args):
+    """Check files for words the glossary says to avoid. Paths are relative to
+    the root; a folder is searched for markdown files."""
+    root = Path(args.root).resolve()
+    files = []
+    for given in args.paths:
+        path = (root / given).resolve()
+        if not path.is_relative_to(root) or not path.exists():
+            raise UsageError(f"{given} is not a file or folder under {root}")
+        for file in (sorted(path.rglob("*.md")) if path.is_dir() else [path]):
+            if file not in files:
+                files.append(file)
+    found = 0
+    for path in files:
+        name = path.relative_to(root).as_posix()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise UsageError(f"{name} is not UTF-8 text") from None
+        for start, word, use in find_avoided(text):
+            line = text.count("\n", 0, start) + 1
+            print(f"{name}:{line}: {word!r} (use {use})")
+            found += 1
+    return 1 if found else 0
+
+
 def main(argv=None):
     from . import __version__
 
@@ -183,7 +221,11 @@ def main(argv=None):
                    help="also write the scripted reports, into this new or empty folder")
     d.set_defaults(run=sample)
 
-    for parser in (v, p, s, d):
+    w = sub.add_parser("words", help="check files for words the glossary says to avoid")
+    w.add_argument("paths", nargs="+", help="files, or folders to search for markdown")
+    w.set_defaults(run=words)
+
+    for parser in (v, p, s, d, w):
         parser.add_argument("--root", default=".", help="the World's directory (default: here)")
 
     args = ap.parse_args(argv)

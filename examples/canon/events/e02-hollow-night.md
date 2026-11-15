@@ -17,4 +17,4 @@ Second event. Varen's disappearance is the spine of the weekend.
 
 ## GM Notes
 
-Do not let an author resolve Kell's Ford here.
+Do not let a Mod Writer resolve Kell's Ford here.

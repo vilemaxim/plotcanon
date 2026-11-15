@@ -1,7 +1,7 @@
 # `mod`
 
-A single runnable piece of play, written in advance by a mod writer and run for
-players by a mod runner.
+A single runnable piece of play, written in advance by a Mod Writer and run for
+players by a Mod Runner.
 
 **A mod belongs to one campaign.** It names that campaign in `campaign`, and
 only that campaign's events can appear in its `events` list.
@@ -9,7 +9,7 @@ only that campaign's events can appear in its `events` list.
 **A mod is not tied to one event.** It can be interrupted and continue later,
 even at another event. `events` lists every event it is scheduled for or has
 run at, and each time play stops a new [after-action](after-action.md) is filed
-for it. A storyline that runs across several mods is a [plot](plot.md) with a
+for it. Anything that runs across several mods is a [plot](plot.md) with a
 `mods:` list, not a bigger mod file.
 
 ## Where the file lives
@@ -24,12 +24,12 @@ errors if they disagree.
 | `approved`, `in-progress`, `finished` | `mods/<campaign-id>/` |
 | `shelved` | `mods/shelved/` |
 
-Sending a mod back to its mod writer returns it to `draft`, and so to `inbox/`.
+Sending a mod back to its Mod Writer returns it to `draft`, and so to `inbox/`.
 A campaign cannot have the id `shelved`.
 
 A mod in `inbox/` is **not canon**, whatever its frontmatter says.
 
-**Unresolved ids in `inbox/` are warnings, not errors.** Authors invent slugs
+**Unresolved ids in `inbox/` are warnings, not errors.** Mod Writers invent slugs
 because they cannot see canon, so a submission arrives with ids that point
 nowhere — that is its expected state, and mapping them is what ingest is for.
 Erroring would put the whole repo in a failing state the moment a mod landed
@@ -37,12 +37,13 @@ and block every commit until reconciliation finished. This is scoped to `inbox/`
 and to mods: the same ids in `mods/` or `canon/` are still errors,
 and a submission still may not claim `canon: approved`.
 
-### Process fields are not author-supplied
+### Process fields are not the Mod Writer's to supply
 
-`state`, `canon`, `visibility`, `campaign` and `events` record where a mod sits in the plot
-lead's process. Outside authors are told not to emit them (`prompts/author-intake.md`),
+`state`, `canon`, `visibility`, `campaign` and `events` record where a mod sits in the Plot
+Master's process. Outside Mod Writers are told not to emit them
+(`prompts/mod-writer-intake.md`),
 and they are set at intake. **If a submitted file carries them, overwrite them —
-do not read them.** An author's model can write `canon: approved` as easily as
+do not read them.** A Mod Writer's model can write `canon: approved` as easily as
 anything else, and it means nothing.
 
 `state` defends itself, since it must agree with the directory. `canon` did not,
@@ -57,7 +58,7 @@ at intake and narrowed later if the mod is ever shown outside the plot team.
 | `id` | ● | slug | Filename stem. Unique repo-wide. |
 | `type` | ● | `mod` | |
 | `title` | ● | text | Display title. |
-| `aliases` | ● | text[] | Working names, the name authors call it in chat. |
+| `aliases` | ● | text[] | Working names, the name Mod Writers call it in chat. |
 | `mod_writer` | ● | text | Who wrote it. |
 | `state` | ● | `enum:mod_state` | Must match the directory. |
 | `campaign` | ◐ | id | `canon/campaigns/`. **Required** once the mod leaves `inbox/`. Must match the directory. |
@@ -68,7 +69,7 @@ at intake and narrowed later if the mod is ever shown outside the plot team.
 | `visibility` | ● | `enum:visibility` | |
 | `features` | ● | see below | What this mod relies on. The retrieval backbone. |
 | `requires` | ○ | see below | Machine-checked preconditions. |
-| `expected_changes` | ○ | map | The mod writer's stated intent, `entity-id: "what changes"`. |
+| `expected_changes` | ○ | map | The Mod Writer's stated intent, `entity-id: "what changes"`. |
 | `supersedes` | ○ | id[] | Mods this replaces. |
 
 ### `features` — what the mod relies on
@@ -109,7 +110,7 @@ entity's state **as of the start of the earliest event in `events`**, so a mod
 that has already begun does not fail because of something that happened later.
 A mod with no events yet is checked against current state.
 
-### `expected_changes` — intent, recorded before the game
+### `expected_changes` — intent, recorded before play
 
 ```yaml
 expected_changes:
@@ -134,15 +135,15 @@ interesting part, and the reconciler reports it.
   is a railroad wearing a structure, and it fails checklist items 3 and 4 while
   looking well organised.
 - **`## NPC Casting`** — who is needed on the night and what they must be able to do.
-- **`## Player Agency Notes`** — the author answers the checklist in `CLAUDE.md` here.
+- **`## Player Agency Notes`** — the Mod Writer answers the checklist in `CLAUDE.md` here.
 - **`## Possible Outcomes`** — branches, including the one where the PCs walk away
   or lose. A mod with one outcome is a cutscene.
 - **`## Logistics`** — props, space, NPC headcount, timing constraints.
 
 ### `## Proposed New Entities` — optional, intake only
 
-Mods written with `prompts/author-intake.md` carry an extra section after
-`## GM Notes`. Outside authors have no access to this repo and cannot know real
+Mods written with larp-llm's `prompts/mod-writer-intake.md` carry an extra section after
+`## GM Notes`. Outside Mod Writers have no access to this repo and cannot know real
 ids, so they list every entity the mod touches with a slug they invented:
 
 ```
@@ -164,7 +165,7 @@ the validator erroring.
 **`features` is authoritative; this section is not.** Once ingest has applied
 the mapping, the section is spent. Keep it for provenance or drop it, but never
 read an id out of it — if the two disagree, `features` is correct and this is
-stale author guesswork.
+the Mod Writer's stale guesswork.
 
 Stubs created from it are `canon: proposed` and stay that way until an
 after-action promotes them. See the promotion gate in `CLAUDE.md` §3.

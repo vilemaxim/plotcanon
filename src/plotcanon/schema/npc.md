@@ -8,7 +8,7 @@
 |---|---|---|---|
 | `id` | ● | slug | Filename stem. Never changes. |
 | `type` | ● | `npc` | |
-| `aliases` | ● | text[] | Every name this NPC is known by, including titles and false names. Keep it fed — this is how authors and Obsidian find them. |
+| `aliases` | ● | text[] | Every name this NPC is known by, including titles and false names. Keep it fed — this is how Mod Writers and Obsidian find them. |
 | `status` | ● | `enum:npc_status` | A claim about `as_of`, not about now. |
 | `as_of` | ● | event-id | The event `status` and `## Current Situation` are true as of. |
 | `factions` | ○ | id[] | `canon/factions/`. |
@@ -23,11 +23,11 @@
 ### On `status`
 
 `dead` and `final-death` are different claims and the distinction is the whole
-point of having both. Your setting can reverse `dead`; a mod using a `dead`
+point of having both. Your world can reverse `dead`; a mod using a `dead`
 NPC gets a warning and must explain the return. `final-death` is an error.
 
 `missing` versus `departed`: `missing` means canon does not know where they are
-and their reappearance is itself plot. `departed` means alive and elsewhere,
+and their reappearance is a story in itself. `departed` means alive and elsewhere,
 usable with a travel justification.
 
 `unknown` is a legitimate state. Use it rather than guessing — the reconciler

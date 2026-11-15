@@ -5,7 +5,7 @@
 # exactly one place to change.
 #
 # Adding a value: add it here, then say what it MEANS in the schema doc for the
-# type that uses it. A value nobody can define is a value authors will misuse.
+# type that uses it. A value nobody can define is a value Mod Writers will misuse.
 # Removing a value: grep canon/ first — the validator will fail every file still
 # using it, which is the point, but do it deliberately.
 
@@ -17,9 +17,9 @@ vocabularies:
 
   npc_status:
     alive:        Present in the world and usable in a mod without explanation.
-    dead:         Dead by means the setting can reverse. Usable, but a mod must explain the return.
+    dead:         Dead by means the world can reverse. Usable, but a mod must explain the return.
     final-death:  Beyond return. Usable only in flashback or as a corpse.
-    missing:      Canon does not know where they are. Their reappearance is itself plot.
+    missing:      Canon does not know where they are. Their reappearance is a story in itself.
     departed:     Alive and elsewhere. Usable with a travel justification.
     unknown:      Canon has not established this. Ask; do not assume.
 
@@ -31,7 +31,7 @@ vocabularies:
     unknown:      Canon has not established this.
 
   plot_status:
-    open:         Live and being advanced by current plot.
+    open:         Live and being advanced by current mods.
     dormant:      Not closed, but nothing is currently advancing it. Free to pick up.
     resolved:     Concluded in canon. Reopening it is a deliberate act, not an oversight.
     abandoned:    Dropped. Will not conclude. Do not build on it.
@@ -63,8 +63,8 @@ vocabularies:
   # Applies to every entity file. This is what makes "propose, don't overwrite"
   # mechanical: an agent may create a `proposed` file; only a human promotes it.
   canon:
-    proposed:     Created by an agent or author, awaiting human approval.
-    approved:     Canon. Authors may rely on it.
+    proposed:     Created by an agent or a Mod Writer, awaiting human approval.
+    approved:     Canon. Mod Writers may rely on it.
     deprecated:   Superseded or retired. Kept for history; do not build on it.
 
   visibility:
@@ -73,8 +73,8 @@ vocabularies:
     gm-only:      Plot team only. Never include in anything handed outside the team.
 
   period_type:
-    event:        A game event.
-    interlude:    A between-event period — downtime, off-event actions, letters.
+    event:        A real-world gathering of play, such as a LARP weekend or a tabletop night.
+    interlude:    The period between two events, in which canon can change with no mod run.
 
   # ── Canon changes ─────────────────────────────────────────────────────────
 
@@ -96,7 +96,7 @@ vocabularies:
 
   # ── Timeline ──────────────────────────────────────────────────────────────
 
-  # SETTING-SPECIFIC — replace these with your own eras. They order pre-campaign
+  # WORLD-SPECIFIC — replace these with your own eras. They order pre-campaign
   # material relative to each other; campaign events use `ordinal` instead.
   era:
     ancient:        Myth and deep history. Dates unreliable by design.

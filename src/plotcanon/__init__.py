@@ -17,6 +17,7 @@ The document types and their fields are described in the files under
 
 from importlib.metadata import version as _version
 
+from ._wording import avoided_words
 from ._api import (
     Document,
     Finding,
@@ -44,6 +45,7 @@ __all__ = [
     "Report",
     "ScriptedReport",
     "World",
+    "avoided_words",
     "check_file",
     "flagged_mods",
     "flags",
