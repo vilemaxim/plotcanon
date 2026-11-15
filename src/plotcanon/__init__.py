@@ -18,6 +18,7 @@ The document types and their fields are described in the files under
 from importlib.metadata import version as _version
 
 from ._wording import avoided_words
+from ._references import Reference, name_of, references, referrers, vocabulary_fields
 from ._api import (
     Document,
     Finding,
@@ -43,6 +44,7 @@ __all__ = [
     "Finding",
     "Flag",
     "Report",
+    "Reference",
     "ScriptedReport",
     "World",
     "avoided_words",
@@ -50,10 +52,14 @@ __all__ = [
     "flagged_mods",
     "flags",
     "load_world",
+    "name_of",
     "read_directory",
+    "references",
+    "referrers",
     "sample_script",
     "sample_world",
     "schema_files",
     "vocabularies",
+    "vocabulary_fields",
     "__version__",
 ]

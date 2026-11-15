@@ -125,6 +125,10 @@ CHANGE_SOURCES = ("after-action", "interlude-changes")
 # mods/<this>/ holds shelved mods, so no campaign may use it as its id.
 SHELVED_DIR = "shelved"
 
+# The kinds of canon change whose `from` and `to` are ids, and what they may
+# point at. For the other transition kinds they are words from a vocabulary.
+CHANGE_REFS = {"location": ["location"], "affiliation": ["faction"]}
+
 # `first_seen` may say this instead of naming an event.
 PRE_CAMPAIGN = "pre-campaign"
 
@@ -937,10 +941,8 @@ def collect_changes(docs, by_id, vocab, f):
                     if vname and val not in allowed:
                         f.error(doc.rel, f"{where}.{slot}: `{val}` is not in vocabulary "
                                          f"`{vname}` for {target.type} `{ent}`")
-                elif kind == "location":
-                    resolve(val, ["location"], by_id, doc, f"{where}.{slot}", f)
-                elif kind == "affiliation":
-                    resolve(val, ["faction"], by_id, doc, f"{where}.{slot}", f)
+                elif kind in CHANGE_REFS:
+                    resolve(val, CHANGE_REFS[kind], by_id, doc, f"{where}.{slot}", f)
 
             if ordinal is not None and decision == in_canon:
                 out.append(Change(ent, kind, d["from"], d["to"], d.get("summary", ""),
