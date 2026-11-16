@@ -20,7 +20,12 @@ from importlib.metadata import version as _version
 from . import editing
 from ._changes import Change, ChangeRefused, applied, unapplied
 from ._wording import avoided_words
-from ._interview import interview_fix_request, interview_instructions, interview_revise_opener
+from ._interview import (
+    interview_fix_request,
+    interview_instructions,
+    interview_report_opener,
+    interview_revise_opener,
+)
 from ._story import Contest, Exit, Passage, Section, Story, story
 from ._path import Path, check_path, path_steps
 from ._twine import FromTwine, from_twine, to_twee
@@ -77,6 +82,7 @@ __all__ = [
     "from_twine",
     "interview_fix_request",
     "interview_instructions",
+    "interview_report_opener",
     "interview_revise_opener",
     "load_world",
     "name_of",

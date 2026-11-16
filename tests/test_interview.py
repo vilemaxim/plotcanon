@@ -52,7 +52,7 @@ class KindsAndSurfaces(unittest.TestCase):
 
     def test_an_unknown_kind_is_refused(self):
         with self.assertRaises(ValueError):
-            instructions("report", "web")
+            instructions("debrief", "web")
 
     def test_an_unknown_surface_is_refused(self):
         with self.assertRaises(ValueError):
@@ -260,3 +260,161 @@ class ReviseOpener(unittest.TestCase):
 
     def test_it_keeps_to_the_glossary(self):
         self.assertEqual(plotcanon.avoided_words(plotcanon.interview_revise_opener()), [])
+
+
+BELL = "mods/lanternlight/the-bell-beneath.md"
+EXPECTED = "learns what rings the bell, and whether to forgive it"
+BELL_MOD = plotcanon.sample_world()[BELL].replace(
+    "supersedes: []\n", f'expected_changes:\n  sister-ane: "{EXPECTED}"\nsupersedes: []\n')
+SILENCED = [{"hook": "The sister asks them to close what was opened"}, "The descent",
+            "The bell", "Who rings it",
+            {"contest": "stop her before the last stroke", "result": "win"},
+            "The bell is silenced"]
+STOPPED = [{"hook": "The sister asks them to close what was opened"}, "The descent"]
+
+
+def reporting(surface="web", **more):
+    return instructions("report", surface, mod=BELL_MOD, **more)
+
+
+class Reporting(unittest.TestCase):
+    """The report Interview: an LLM helps a Mod Runner write the After-Action
+    Report for one Stretch, from the Path walked, if any."""
+
+    def test_both_surfaces_have_instructions_with_a_path_and_without(self):
+        for surface in SURFACES:
+            for path in (SILENCED, None):
+                with self.subTest(surface, path=path is not None):
+                    text = reporting(surface, path=path)
+
+                    self.assertIsInstance(text, str)
+                    self.assertIn("After-Action Report", text)
+
+    def test_the_mod_and_its_expected_changes_are_given(self):
+        text = reporting()
+
+        self.assertIn("id: the-bell-beneath", text)
+        self.assertIn("The party goes down into the crypt under the chapel", text)
+        flat = " ".join(text.split())
+        self.assertIn(f"`sister-ane`: {EXPECTED}", flat)
+
+    def test_the_path_walked_is_given_step_by_step(self):
+        flat = " ".join(reporting(path=SILENCED).split())
+
+        for step in ("The sister asks them to close what was opened", "The descent",
+                     "Who rings it", "stop her before the last stroke", "win",
+                     "The bell is silenced"):
+            with self.subTest(step):
+                self.assertIn(step, flat)
+        self.assertIn("contest: stop her before the last stroke", reporting(path=SILENCED))
+
+    def test_finished_is_proposed_by_the_path_for_the_mod_runner_to_confirm(self):
+        ending = " ".join(reporting(path=SILENCED).split())
+        scene = " ".join(reporting(path=STOPPED).split())
+
+        self.assertIn("The Path ends at the outcome `The bell is silenced`, so it proposes "
+                      "`finished: true`", ending)
+        self.assertIn("The Path ends at the scene `The descent`, so it proposes "
+                      "`finished: false`", scene)
+        for text in (ending, scene):
+            self.assertIn("Ask me to confirm it", text)
+
+    def test_with_no_path_the_mod_runner_says_what_happened_and_where_play_stopped(self):
+        flat = " ".join(reporting().split())
+
+        self.assertIn("There is no Path for this report", flat)
+        self.assertIn("say in my own words what happened and where play stopped", flat)
+
+    def test_it_asks_ran_pcs_and_what_went_off_script(self):
+        for path in (SILENCED, None):
+            flat = " ".join(reporting(path=path).split())
+            for asked in ("whether the Mod ran (`ran`)", "which PCs took part (`pcs`)",
+                          "what went off-script"):
+                with self.subTest(asked, path=path is not None):
+                    self.assertIn(asked, flat)
+
+    def test_canon_changes_are_written_in_the_schemas_terms(self):
+        flat = " ".join(reporting().split())
+
+        for kind in ("status", "location", "affiliation", "relationship", "knowledge",
+                     "narrative", "created"):
+            with self.subTest(kind):
+                self.assertIn(f"`{kind}`", flat)
+        self.assertIn("`decision: proposed`", flat)
+        self.assertIn("**Required** for `status`, `location` and `affiliation`", flat)
+        self.assertIn("`## What Happened` · `## Divergences From The Mod` · `## Loose Ends`",
+                      flat)
+
+    def test_the_path_is_copied_into_the_report_as_given(self):
+        text = reporting(path=SILENCED)
+
+        self.assertIn("path:\n  - hook: The sister asks them to close what was opened\n"
+                      "  - The descent\n", text)
+
+    def test_a_stretch_that_continues_another_says_where_the_last_stopped(self):
+        later = ["The bell", "The bell is taken"]
+
+        text = " ".join(reporting(path=later, continues_from="The bell").split())
+
+        self.assertIn("The last report on this Mod says play stopped at `The bell`", text)
+        no_path = " ".join(reporting(continues_from="The bell").split())
+        self.assertIn("The last report on this Mod says play stopped at `The bell`", no_path)
+
+    def test_a_world_gives_the_slugs_to_use(self):
+        text = reporting(path=SILENCED, world=plotcanon.sample_world())
+
+        self.assertIn("pc-bram-tolliver", text)
+
+    def test_a_path_that_does_not_fit_the_mod_is_refused(self):
+        with self.assertRaises(ValueError):
+            reporting(path=["The belfry"])
+        with self.assertRaises(ValueError):
+            reporting(path=["The bell"])                 # does not start at a Hook
+
+    def test_a_path_on_a_mod_with_no_dry_run_is_refused(self):
+        unstructured = plotcanon.sample_world()["mods/lanternlight/the-ferrymans-price.md"]
+
+        with self.assertRaises(ValueError):
+            instructions("report", "web", mod=unstructured, path=STOPPED)
+        self.assertIn("There is no Path for this report",
+                      " ".join(instructions("report", "web", mod=unstructured).split()))
+
+    def test_reporting_needs_a_mod_with_an_id(self):
+        with self.assertRaises(ValueError):
+            instructions("report", "web")
+        with self.assertRaises(ValueError):
+            instructions("report", "web", mod="## Premise\n\nNo frontmatter.\n")
+
+    def test_each_kind_takes_only_what_it_uses(self):
+        with self.assertRaises(ValueError):
+            instructions("report", "web", mod=BELL_MOD, draft=DRAFT)
+        with self.assertRaises(ValueError):
+            instructions("new-mod", "web", mod=BELL_MOD)
+        with self.assertRaises(ValueError):
+            revising(path=SILENCED)
+
+    def test_it_keeps_to_the_glossary(self):
+        for surface in SURFACES:
+            for path in (SILENCED, None):
+                with self.subTest(surface, path=path is not None):
+                    self.assertEqual(plotcanon.avoided_words(reporting(surface, path=path)), [])
+
+
+class ReportOpener(unittest.TestCase):
+    def test_with_a_path_it_asks_the_llm_to_begin_with_it(self):
+        flat = " ".join(plotcanon.interview_report_opener(SILENCED).split())
+
+        self.assertIn("Go through the Path with me", flat)
+
+    def test_with_no_path_it_asks_the_mod_runner_to_say_what_happened(self):
+        for path in (None, []):
+            with self.subTest(path=path):
+                flat = " ".join(plotcanon.interview_report_opener(path).split())
+
+                self.assertIn("ask me to say in my own words what happened and where play "
+                              "stopped", flat)
+
+    def test_it_keeps_to_the_glossary(self):
+        for path in (SILENCED, None):
+            self.assertEqual(plotcanon.avoided_words(plotcanon.interview_report_opener(path)),
+                             [])

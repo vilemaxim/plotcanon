@@ -1,6 +1,6 @@
 """The instructions for an Interview: the text an LLM is given, as its system
 prompt, to help a Mod Writer write a Mod or revise one the Plot Master sent
-back.
+back, or to help a Mod Runner write the After-Action Report for one Stretch.
 
 The text began as larp-llm's `prompts/mod-writer-intake.md`. plotcanon owns it
 now, and adds the Dry Run convention from `schema/mod.md` in the same terms
@@ -9,11 +9,13 @@ now, and adds the Dry Run convention from `schema/mod.md` in the same terms
 
 from __future__ import annotations
 
+import json
 import re
 
 from . import _checks
 
-KINDS = ("new-mod", "revise-mod")
+KINDS = ("new-mod", "revise-mod", "report")
+MOD_KINDS = ("new-mod", "revise-mod")
 SURFACES = ("web", "cli")
 
 
@@ -488,13 +490,14 @@ ask.
 
 
 def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="",
-                           flags=()):
+                           flags=(), mod=None, path=None, continues_from=None):
     """The instructions for an Interview, as one text to give an LLM as its
     system prompt.
 
-    `kind` is "new-mod" or "revise-mod". `surface` is "cli", for pasting into
-    an LLM by hand or using with Claude Code, or "web", for the app's own LLM,
-    which is told to give the finished file whole so the app can check it.
+    `kind` is "new-mod", "revise-mod" or "report". `surface` is "cli", for
+    pasting into an LLM by hand or using with Claude Code, or "web", for the
+    app's own LLM, which is told to give the finished file whole so the app can
+    check it.
 
     `world` is what the person may read in a World, in any form `load_world`
     takes: a directory, a `{path: text}` mapping or a `World`. The caller
@@ -505,16 +508,37 @@ def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_r
     For "revise-mod", `draft` is the text of the draft's file, which must have
     an `id`; `sent_back_reason` is why the Plot Master sent it back (may be
     empty); `flags` are its open Flags, each a pair `(the Feature it touches,
-    its message)`. A "new-mod" takes none of these.
+    its message)`.
 
-    Raises ValueError for an unknown kind or surface, a "revise-mod" with no
-    draft or a draft with no `id`, or a "new-mod" given a draft.
+    For "report", `mod` is the text of the Mod's file, which must have an
+    `id`. `path` is the Path the Stretch took through the Mod's Dry Run, as
+    the steps a report's `path` holds (see `path_steps`), or None when there is
+    none. `continues_from` is where the last report's Path on the Mod stopped,
+    a scene's name, or None; the Path may start there instead of at a Hook.
+
+    Each kind takes only its own of these. Raises ValueError for an unknown
+    kind or surface, a "revise-mod" with no draft or a draft with no `id`, a
+    "report" with no Mod, a Mod with no `id`, or a Path that does not fit the
+    Mod's Dry Run, and for any of these given to a kind that does not take it.
     """
     if kind not in KINDS:
         raise ValueError(f"an Interview's kind is one of {', '.join(KINDS)}, not {kind!r}")
     if surface not in SURFACES:
         raise ValueError(f"an Interview's surface is one of {', '.join(SURFACES)}, "
                          f"not {surface!r}")
+    if kind != "report" and (mod is not None or path is not None
+                             or continues_from is not None):
+        raise ValueError("only a report Interview takes a Mod, a Path or where the last "
+                         "Stretch stopped")
+    if kind == "report":
+        if draft is not None or sent_back_reason or flags:
+            raise ValueError("a report has no draft, send-back reason or Flags")
+        if mod is None:
+            raise ValueError("a report Interview needs the Mod it reports on")
+        if continues_from is not None and not isinstance(continues_from, str):
+            raise TypeError("where the last Stretch stopped is a scene's name")
+        readable = None if world is None else _readable(world)
+        return _report(surface, mod, path, continues_from, readable)
     if kind == "revise-mod":
         if draft is None:
             raise ValueError("revising a Mod needs its draft")
@@ -539,6 +563,285 @@ def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_r
     if kind == "revise-mod":
         parts.append(revising)
     parts.append(START_HERE[kind])
+    return "\n".join(parts)
+
+
+REPORT_OPENING = """\
+You are helping me, the Mod Runner, write the After-Action Report for one
+Stretch of a Mod I ran at a LARP: one continuous stretch of play, which ended
+when play stopped. The Mod, what its Mod Writer expected to change and the
+Path the Stretch took through the Mod's Dry Run, if there is one, are at the
+end of these instructions. Your job is to get the rest from me, to turn it
+into one report file in the exact format below, and to push back on me where
+the report is vague or claims more than happened.
+"""
+
+
+REPORT_PRODUCING = """\
+## What you are producing
+
+One file. It has a YAML frontmatter block at the top between `---` lines, then
+a body of fixed headings. Keep every heading listed, in order, even if a
+section ends up short.
+
+Write for the Plot Master reading it a week later, who was not there. Plain
+past tense, concrete, short.
+
+## Frontmatter
+
+```yaml
+---
+id: aa-{mod_id}              # aa-{mod_id}-2, -3 and so on for later reports on this Mod
+type: after-action
+mod: {mod_id}
+event: <the id of the Event this Stretch was played at>
+ran: <true or false>
+finished: <true or false>
+{path_line}mod_runner: <my name or handle>
+pcs: [<the id of each PC who took part>]
+canon_changes: []
+---
+```
+
+- **`ran`** is `false` if the Mod was scheduled and did not happen. Then `pcs`
+  is `[]`, `finished` is `false` and there is no Path.
+- **`finished`** is `true` if the Mod has nothing left to play after this
+  Stretch, and `false` if play stopped with more to come.
+- **`event`** must be one of the Mod's `events`. If you do not know which, ask
+  me.
+{path_rule}"""
+
+
+REPORT_PATH_RULE = """\
+- **`path`** is the Path, copied exactly as it is given at the end of these
+  instructions: the same steps, in the same order, spelled the same. Do not
+  change it, even if what I tell you differs from it. Say so in
+  `## Divergences From The Mod` instead.
+"""
+
+
+REPORT_NO_PATH_RULE = """\
+- Leave out `path`. There is no Path for this report.
+"""
+
+
+CANON_CHANGES = """\
+## `canon_changes`
+
+Each entry names one entity and one change to it. This list is what the Plot
+Master approves or rejects, one change at a time, and what canon is brought up
+to date from, so write it in exactly these terms:
+
+```yaml
+canon_changes:
+  - entity: varen-ashcroft
+    kind: status
+    decision: proposed
+    from: alive
+    to: missing
+    summary: "Betrayed the party at the chapel and fled north."
+  - entity: varen-ashcroft
+    kind: relationship
+    decision: proposed
+    summary: "Now a declared enemy of Tomas Veil."
+```
+
+- **`entity`** is the id of an NPC, faction, location, Plot or PC. {ids}
+- **`kind`** is one of seven:
+{kinds}
+- **`decision`** is always `decision: proposed`. Only the Plot Master changes
+  it. Never write `note`; that is the Plot Master's too.
+- **`from` and `to`**: **Required** for `status`, `location` and `affiliation`,
+  and **forbidden** for the others. `from` is the entity's value before this
+  Stretch, as its document has it; `to` is its value now. For `location` they
+  are location ids, and for `affiliation` faction ids.
+- **`summary`** is one line, in plain past tense. It is what a person reads
+  about the change, so write it to be read.
+
+Propose only what happened in play. A change the Mod expected and that did not
+happen is not a change; it is a divergence.
+
+## Body headings
+
+Use all three, in this order:
+
+`## What Happened` · `## Divergences From The Mod` · `## Loose Ends`
+
+- **What Happened**: the Stretch, in a few short paragraphs.
+- **Divergences From The Mod**: compared with the Mod and what it expected to
+  change, what went differently. This is the section a review across Plots
+  reads.
+- **Loose Ends**: hooks that came up in play that nobody has written yet.
+"""
+
+
+IDS_FROM_WORLD = """Use the ids listed under "What you may read in the World,"
+  here and in `pcs`. Never guess one: if an entity is not listed, ask me."""
+
+
+IDS_INVENTED = """If you do not know an entity's id, or a PC's, ask me.
+  Never guess one."""
+
+
+REPORT_PHASES = """\
+## How we write it
+
+We work in phases, in this order. You drive the transitions: do not wait for me
+to prompt you into the next phase, and do not skip ahead to the file.
+
+### 1. Where play went
+
+{where}
+
+### 2. Who was there
+
+Ask me whether the Mod ran (`ran`), and which PCs took part (`pcs`). If it did
+not run, say what that means for the report, and go to phase 5.
+
+### 3. What went off-script
+
+Ask me what went off-script: what happened that the Mod did not say would, and
+what it said would happen that did not. Compare what I tell you with the Mod
+and with what its Mod Writer expected to change. This becomes
+`## Divergences From The Mod`.
+
+### 4. What changed in canon
+
+From all of that, propose the canon changes, one at a time, and agree each with
+me. Ask about any entity in what the Mod expected to change that I have not
+mentioned. Do not invent a change I have not told you about.
+
+### 5. Produce the file, when I ask
+
+Only when I ask for it, produce the file. **Before you write it, go back and
+re-read the frontmatter block, the rules for `canon_changes` and the body
+headings from the top of these instructions,** and copy the field names from
+there rather than from memory.
+"""
+
+
+WHERE_WITH_PATH = """\
+Start by going through the Path with me, step by step, in a sentence each, and
+ask me what happened at each step that the Path does not say. {proposal} Ask me
+to confirm it. If I say otherwise, the report says what I say, and
+`## Divergences From The Mod` says why the Path and the report differ."""
+
+
+WHERE_WITHOUT_PATH = """\
+There is no Path for this report. Start by asking me to say in my own words
+what happened and where play stopped. From that, propose `finished`: `true` if
+the Mod reached one of its Possible Outcomes and has nothing left to play,
+`false` if play stopped with more to come. Ask me to confirm it."""
+
+
+REPORT_START_HERE = """\
+## Start here
+
+{first} Then take us through the phases, and produce the report file when I
+ask.
+"""
+
+
+def _report_section(mod, path, continues_from):
+    """The Mod, what it expected to change, and the Path walked, if any.
+    Returns the section and what phase 1 says to do."""
+    from ._path import check_path
+    from ._story import story
+
+    mod_id, fields = _front(mod, "the Mod")
+    told = story(mod)
+    proposal = None
+    if path is not None and path != []:
+        if not told.playable:
+            raise ValueError("the Mod has no Dry Run, so it has no Path: "
+                             + told.problems[0])
+        walked = check_path(told, path, continues_from=continues_from)
+        if not walked.ok:
+            raise ValueError("the Path does not fit the Mod's Dry Run: "
+                             + "; ".join(walked.problems))
+        where = "outcome" if walked.finished else "scene"
+        proposal = (f"The Path ends at the {where} `{walked.end.name}`, so it proposes "
+                    f"`finished: {'true' if walked.finished else 'false'}`.")
+    expected = fields.get("expected_changes")
+    lines = []
+    if isinstance(expected, dict):
+        lines = [f"- `{entity}`: {' '.join(str(said).split())}"
+                 for entity, said in expected.items()]
+    parts = [
+        "## The Mod\n\n"
+        f"The report is on `{mod_id}`. Its file:\n\n"
+        + _fenced(mod, "markdown"),
+        "### What its Mod Writer expected to change\n\n"
+        + ("\n".join(lines) + "\n" if lines else
+           "Nothing: the Mod does not say. Ask me what changed all the same.\n"),
+    ]
+    if continues_from is not None:
+        parts.append("### Where the last Stretch stopped\n\n"
+                     f"The last report on this Mod says play stopped at `{continues_from}`.\n"
+                     "This Stretch carries on from there.\n")
+    if proposal is not None:
+        steps = _yaml_path(path)
+        parts.append("### The Path walked\n\n"
+                     "I walked the Path this Stretch took through the Mod's Dry Run, from the\n"
+                     "Hook taken, or where the last Stretch stopped, to where play stopped.\n"
+                     "Copy it into the report as `path`, exactly:\n\n"
+                     + _fenced(steps, "yaml") + "\n" + proposal + "\n")
+        where = WHERE_WITH_PATH.format(proposal=proposal)
+    else:
+        parts.append("### The Path walked\n\nThere is no Path for this report.\n")
+        where = WHERE_WITHOUT_PATH
+    return "\n".join(parts), where, proposal is not None, mod_id
+
+
+def _yaml_path(path):
+    """A Path as the YAML a report holds it in."""
+    lines = ["path:"]
+    for step in path:
+        if isinstance(step, str):
+            lines.append(f"  - {_scalar(step)}")
+        elif "hook" in step:
+            lines.append(f"  - hook: {_scalar(step['hook'])}")
+        else:
+            lines.append(f"  - contest: {_scalar(step['contest'])}")
+            lines.append(f"    result: {_scalar(step['result'])}")
+    return "\n".join(lines) + "\n"
+
+
+def _scalar(text):
+    """Text as a YAML value: as it is when YAML reads it back the same, quoted
+    otherwise."""
+    try:
+        if _checks.yaml.safe_load(text) == text and "#" not in text:
+            return text
+    except Exception:  # noqa: BLE001 - anything YAML cannot read back is quoted
+        pass
+    return json.dumps(text, ensure_ascii=False)
+
+
+def _report(surface, mod, path, continues_from, readable):
+    """The instructions for a report Interview."""
+    section, where, has_path, mod_id = _report_section(mod, path, continues_from)
+    vocab = _checks.load_vocab()["vocabularies"]["canon_change_kind"]
+    kinds = "\n".join(f"  - `{kind}`: {' '.join(str(meaning).split())}"
+                      for kind, meaning in vocab.items())
+    first = ("Start now by going through the Path with me." if has_path else
+             "Start now by asking me to say in my own words what happened and where "
+             "play stopped.")
+    parts = [
+        REPORT_OPENING,
+        REPORT_PRODUCING.format(
+            mod_id=mod_id,
+            path_line="path: <the Path, exactly as given below>\n" if has_path else "",
+            path_rule=REPORT_PATH_RULE if has_path else REPORT_NO_PATH_RULE),
+        CANON_CHANGES.format(kinds=kinds, ids=IDS_INVENTED if readable is None else
+                             IDS_FROM_WORLD),
+        REPORT_PHASES.format(where=where),
+        FINISHING[surface],
+    ]
+    if readable is not None:
+        parts.append(readable)
+    parts.append(section)
+    parts.append(REPORT_START_HERE.format(first=first))
     return "\n".join(parts)
 
 
@@ -589,17 +892,23 @@ def _readable(world):
 def _draft_id(draft):
     """The `id` in a draft's frontmatter. Raises ValueError when there is
     none to read."""
-    if not isinstance(draft, str):
-        raise TypeError(f"a draft is the text of its file, not {type(draft).__name__}")
-    raw, _body = _checks.split_frontmatter(draft)
+    return _front(draft, "the draft")[0]
+
+
+def _front(text, what):
+    """The `id` in a file's frontmatter, and its fields. Raises ValueError
+    when there is no `id` to read."""
+    if not isinstance(text, str):
+        raise TypeError(f"{what} is the text of its file, not {type(text).__name__}")
+    raw, _body = _checks.split_frontmatter(text)
     try:
         fields = None if raw is None else _checks.yaml.load(raw, Loader=_checks.Loader)  # noqa: S506
     except Exception:  # noqa: BLE001 - any YAML that cannot be read
         fields = None
     doc_id = fields.get("id") if isinstance(fields, dict) else None
     if not isinstance(doc_id, str) or not doc_id.strip():
-        raise ValueError("the draft has no `id` in its frontmatter to keep")
-    return doc_id.strip()
+        raise ValueError(f"{what} has no `id` in its frontmatter")
+    return doc_id.strip(), fields
 
 
 def _draft_section(draft, reason, flags):
@@ -670,3 +979,24 @@ def interview_revise_opener():
     send-back reason and each Flag that `interview_instructions` gave it.
     """
     return REVISE_OPENER
+
+
+REPORT_OPENER_WITH_PATH = """\
+Let's begin. Go through the Path with me, step by step, as your instructions
+say, and then ask me what you need for the rest of the report.
+"""
+
+
+REPORT_OPENER_WITHOUT_PATH = """\
+Let's begin. There is no Path for this report, so ask me to say in my own words
+what happened and where play stopped, as your instructions say.
+"""
+
+
+def interview_report_opener(path=None):
+    """The first message an app sends its LLM, on the person's behalf, to open
+    a "report" Interview, so the LLM speaks first. `path` is the Path given to
+    `interview_instructions`, or None: with none, the LLM begins by asking the
+    Mod Runner to say in words what happened and where play stopped.
+    """
+    return REPORT_OPENER_WITH_PATH if path else REPORT_OPENER_WITHOUT_PATH
