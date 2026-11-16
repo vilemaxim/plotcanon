@@ -22,6 +22,7 @@ from ._changes import Change, ChangeRefused, applied, unapplied
 from ._wording import avoided_words
 from ._interview import interview_fix_request, interview_instructions, interview_revise_opener
 from ._story import Contest, Exit, Passage, Section, Story, story
+from ._path import Path, check_path, path_steps
 from ._twine import FromTwine, from_twine, to_twee
 from ._references import Reference, name_of, references, referrers, vocabulary_fields
 from ._api import (
@@ -57,6 +58,7 @@ __all__ = [
     "Flag",
     "FromTwine",
     "Passage",
+    "Path",
     "Report",
     "Reference",
     "ScriptedReport",
@@ -68,6 +70,7 @@ __all__ = [
     "applied",
     "avoided_words",
     "check_file",
+    "check_path",
     "editing",
     "flagged_mods",
     "flags",
@@ -77,6 +80,7 @@ __all__ = [
     "interview_revise_opener",
     "load_world",
     "name_of",
+    "path_steps",
     "read_directory",
     "references",
     "referrers",

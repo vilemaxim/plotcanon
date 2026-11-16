@@ -92,7 +92,7 @@ SCHEMAS = {
         "dir": "after-actions",
         "required": ["id", "type", "mod", "event", "ran", "finished", "mod_runner", "pcs",
                      "canon_changes"],
-        "optional": [],
+        "optional": ["path"],
     },
     "interlude-changes": {
         "dir": "interludes",
@@ -1181,6 +1181,87 @@ def check_dry_runs(docs, structure, f):
             report(doc.rel, message)
 
 
+def check_paths(docs, by_id, f):
+    """Each report's `path` against its Mod's Dry Run. A report with no
+    `path` is not checked.
+
+    A Path may start where the Path of the report before it on the same Mod
+    stopped: the last report that ran, by event and then id. When that report
+    has no Path, or one that does not fit, where it stopped is not known, and
+    the Path may start at any scene.
+    """
+    from ._path import check_path
+    from ._story import story
+
+    stories, walked = {}, {}
+
+    def told(mod):
+        if mod.id not in stories:
+            stories[mod.id] = story(mod.body)
+        return stories[mod.id]
+
+    def order(doc):
+        ev = doc.fm.get("event")
+        ordinal = ordinal_of(ev, by_id) if isinstance(ev, str) else None
+        return None if ordinal is None else (ordinal, natural_key(doc.id))
+
+    def stopped_before(doc, mod):
+        """Where play stopped before this report: a scene's name; None when a
+        Path must start at a Hook; or `...` when it is not known."""
+        mine = order(doc)
+        if mine is None:
+            return ...
+        earlier = [(order(d), d) for d in docs
+                   if d.type == "after-action" and d.fm.get("mod") == mod.id and d is not doc
+                   and d.fm.get("ran") is not False and order(d) is not None
+                   and order(d) < mine]
+        if not earlier:
+            return None
+        last = max(earlier, key=lambda pair: pair[0])[1]
+        if last.fm.get("path") in (None, []):
+            return ...
+        end = path_of(last, mod).end
+        return ... if end is None else end.name
+
+    def path_of(doc, mod):
+        """The report's Path read against its Mod's story, from where the
+        report before it stopped. Each report is read once."""
+        if doc.rel not in walked:
+            steps = doc.fm.get("path")
+            start = stopped_before(doc, mod)
+            if start is ...:
+                # Not known: let the Path start wherever its first step is.
+                first = steps[0] if isinstance(steps, list) and steps else None
+                start = first if isinstance(first, str) else None
+            walked[doc.rel] = check_path(told(mod), steps, continues_from=start)
+        return walked[doc.rel]
+
+    for doc in docs:
+        steps = doc.fm.get("path")
+        if doc.type != "after-action" or steps is None or steps == []:
+            continue
+        mod_id = doc.fm.get("mod")
+        mod = by_id.get(mod_id) if isinstance(mod_id, str) else None
+        if mod is None or mod.type != "mod":
+            continue
+        if not told(mod).playable:
+            f.warn(doc.rel, f"has a `path`, but mod `{mod.id}` has no Dry Run to check it "
+                            f"against — {told(mod).problems[0]}")
+            continue
+        result = path_of(doc, mod)
+        for problem in result.problems:
+            f.error(doc.rel, problem)
+        finished = doc.fm.get("finished")
+        if result.finished and finished is False:
+            f.warn(doc.rel, f"`path` ends at the outcome `{result.end.name}`, but the report "
+                            f"says `finished: false` — an ending reached leaves the Mod "
+                            f"nothing to play. Say `finished: true`, or correct the Path")
+        elif result.finished is False and finished is True:
+            f.warn(doc.rel, f"`path` ends at the scene `{result.end.name}`, but the report "
+                            f"says `finished: true` — play that stopped at a scene has more "
+                            f"of the Mod to play. Say `finished: false`, or correct the Path")
+
+
 def run_checks(files, head=None, dry_run_structure=None):
     """Run every check over a World's files.
 
@@ -1227,4 +1308,5 @@ def run_checks(files, head=None, dry_run_structure=None):
     check_orphans(docs, by_id, f)
     check_generated_freshness(generated, head, f)
     check_dry_runs(docs, settings.dry_run_structure, f)
+    check_paths(docs, by_id, f)
     return docs, by_id, f
