@@ -9,13 +9,13 @@ now, and adds the Dry Run convention from `schema/mod.md` in the same terms
 
 from __future__ import annotations
 
-import json
 import re
+from dataclasses import dataclass
 
 from . import _checks
+from ._path import as_last_stop, check_path, has_path, path_yaml
 
 KINDS = ("new-mod", "revise-mod", "report")
-MOD_KINDS = ("new-mod", "revise-mod")
 SURFACES = ("web", "cli")
 
 
@@ -490,7 +490,7 @@ ask.
 
 
 def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="",
-                           flags=(), mod=None, path=None, continues_from=None):
+                           flags=(), mod=None, path=None, continues_from=None, event=None):
     """The instructions for an Interview, as one text to give an LLM as its
     system prompt.
 
@@ -513,32 +513,36 @@ def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_r
     For "report", `mod` is the text of the Mod's file, which must have an
     `id`. `path` is the Path the Stretch took through the Mod's Dry Run, as
     the steps a report's `path` holds (see `path_steps`), or None when there is
-    none. `continues_from` is where the last report's Path on the Mod stopped,
-    a scene's name, or None; the Path may start there instead of at a Hook.
+    none. `continues_from` is where play stopped before this report, as
+    `check_path` takes it: a `LastStop` (see `last_stop`), a scene's name, or
+    None when there is no earlier report. `event` is the id of the Event the
+    Stretch was played at, or None for the LLM to ask. With `world`, the
+    report's `id` is worked out from the reports in it.
 
     Each kind takes only its own of these. Raises ValueError for an unknown
-    kind or surface, a "revise-mod" with no draft or a draft with no `id`, a
+    kind or surface; a "revise-mod" with no draft or a draft with no `id`; a
     "report" with no Mod, a Mod with no `id`, or a Path that does not fit the
-    Mod's Dry Run, and for any of these given to a kind that does not take it.
+    Mod's Dry Run from `continues_from`; and any of these given to a kind
+    that does not take it. Raises TypeError for a draft, a Mod or an `event`
+    that is not text, or a `continues_from` that is none of the three.
     """
     if kind not in KINDS:
         raise ValueError(f"an Interview's kind is one of {', '.join(KINDS)}, not {kind!r}")
     if surface not in SURFACES:
         raise ValueError(f"an Interview's surface is one of {', '.join(SURFACES)}, "
                          f"not {surface!r}")
-    if kind != "report" and (mod is not None or path is not None
-                             or continues_from is not None):
-        raise ValueError("only a report Interview takes a Mod, a Path or where the last "
-                         "Stretch stopped")
+    if kind != "report" and any(value is not None
+                                for value in (mod, path, continues_from, event)):
+        raise ValueError("only a report Interview takes a Mod, a Path, where the last "
+                         "Stretch stopped or an Event")
     if kind == "report":
         if draft is not None or sent_back_reason or flags:
             raise ValueError("a report has no draft, send-back reason or Flags")
         if mod is None:
             raise ValueError("a report Interview needs the Mod it reports on")
-        if continues_from is not None and not isinstance(continues_from, str):
-            raise TypeError("where the last Stretch stopped is a scene's name")
-        readable = None if world is None else _readable(world)
-        return _report(surface, mod, path, continues_from, readable)
+        if event is not None and not isinstance(event, str):
+            raise TypeError("an Event is given by its id, as text")
+        return _report(surface, mod, path, as_last_stop(continues_from), event, world)
     if kind == "revise-mod":
         if draft is None:
             raise ValueError("revising a Mod needs its draft")
@@ -591,11 +595,11 @@ past tense, concrete, short.
 
 ```yaml
 ---
-id: aa-{mod_id}              # aa-{mod_id}-2, -3 and so on for later reports on this Mod
+{id_line}
 type: after-action
 mod: {mod_id}
-event: <the id of the Event this Stretch was played at>
-ran: <true or false>
+{event_line}
+{ran_line}
 finished: <true or false>
 {path_line}mod_runner: <my name or handle>
 pcs: [<the id of each PC who took part>]
@@ -603,24 +607,38 @@ canon_changes: []
 ---
 ```
 
-- **`ran`** is `false` if the Mod was scheduled and did not happen. Then `pcs`
-  is `[]`, `finished` is `false` and there is no Path.
-- **`finished`** is `true` if the Mod has nothing left to play after this
-  Stretch, and `false` if play stopped with more to come.
+{rules}"""
+
+
+ID_GIVEN = "- **`id`** is `{report_id}`. Keep `id: {report_id}` exactly as it is.\n"
+ID_CONVENTION = """\
+- **`id`** is `aa-{mod_id}` for the first report on this Mod, then
+  `aa-{mod_id}-2`, `aa-{mod_id}-3` and so on. If you do not know how many there
+  are, ask me.
+"""
+EVENT_GIVEN = "- **`event`** is `{event}`, the Event this Stretch was played at.\n"
+EVENT_ASKED = """\
 - **`event`** must be one of the Mod's `events`. If you do not know which, ask
   me.
-{path_rule}"""
-
-
-REPORT_PATH_RULE = """\
+"""
+RAN_WALKED = """\
+- **`ran`** is `true`: a Path was walked, so the Mod ran.
+"""
+RAN_ASKED = """\
+- **`ran`** is `false` if the Mod was scheduled and did not happen. Then `pcs`
+  is `[]`, `finished` is `false` and there is no Path.
+"""
+FINISHED_RULE = """\
+- **`finished`** is `true` if the Mod has nothing left to play after this
+  Stretch, and `false` if play stopped with more to come.
+"""
+PATH_RULE = """\
 - **`path`** is the Path, copied exactly as it is given at the end of these
   instructions: the same steps, in the same order, spelled the same. Do not
   change it, even if what I tell you differs from it. Say so in
   `## Divergences From The Mod` instead.
 """
-
-
-REPORT_NO_PATH_RULE = """\
+NO_PATH_RULE = """\
 - Leave out `path`. There is no Path for this report.
 """
 
@@ -695,8 +713,7 @@ to prompt you into the next phase, and do not skip ahead to the file.
 
 ### 2. Who was there
 
-Ask me whether the Mod ran (`ran`), and which PCs took part (`pcs`). If it did
-not run, say what that means for the report, and go to phase 5.
+{who}
 
 ### 3. What went off-script
 
@@ -720,6 +737,15 @@ there rather than from memory.
 """
 
 
+WHO_WALKED = """\
+Ask me which PCs took part (`pcs`)."""
+
+
+WHO_ASKED = """\
+Ask me whether the Mod ran (`ran`), and which PCs took part (`pcs`). If it did
+not run, say what that means for the report, and go to phase 5."""
+
+
 WHERE_WITH_PATH = """\
 Start by going through the Path with me, step by step, in a sentence each, and
 ask me what happened at each step that the Path does not say. {proposal} Ask me
@@ -734,6 +760,22 @@ the Mod reached one of its Possible Outcomes and has nothing left to play,
 `false` if play stopped with more to come. Ask me to confirm it."""
 
 
+STOPPED_AT = """\
+### Where the last Stretch stopped
+
+The last report on this Mod says play stopped at `{passage}`. This Stretch
+carries on from there.
+"""
+
+
+STOPPED_UNKNOWN = """\
+### Where the last Stretch stopped
+
+There is an earlier report on this Mod, but where play stopped is not known:
+it has no Path that says so. {picked_up}
+"""
+
+
 REPORT_START_HERE = """\
 ## Start here
 
@@ -742,26 +784,37 @@ ask.
 """
 
 
-def _report_section(mod, path, continues_from):
-    """The Mod, what it expected to change, and the Path walked, if any.
-    Returns the section and what phase 1 says to do."""
-    from ._path import check_path
+@dataclass(frozen=True)
+class _ReportParts:
+    """What a report Interview's text is made from that depends on the Mod
+    and the Path: the section giving them, what phase 1 says to do, whether a
+    Path was walked, and the Mod's id."""
+
+    section: str
+    where: str
+    walked: bool
+    mod_id: str
+
+
+def _report_parts(mod, path, stop):
+    """The Mod, what it expected to change, where the last Stretch stopped,
+    and the Path walked, if any, read into `_ReportParts`."""
     from ._story import story
 
     mod_id, fields = _front(mod, "the Mod")
     told = story(mod)
-    proposal = None
-    if path is not None and path != []:
+    walked = has_path(path)
+    if walked:
         if not told.playable:
             raise ValueError("the Mod has no Dry Run, so it has no Path: "
                              + told.problems[0])
-        walked = check_path(told, path, continues_from=continues_from)
-        if not walked.ok:
+        checked = check_path(told, path, continues_from=stop)
+        if not checked.ok:
             raise ValueError("the Path does not fit the Mod's Dry Run: "
-                             + "; ".join(walked.problems))
-        where = "outcome" if walked.finished else "scene"
-        proposal = (f"The Path ends at the {where} `{walked.end.name}`, so it proposes "
-                    f"`finished: {'true' if walked.finished else 'false'}`.")
+                             + "; ".join(checked.problems))
+        where = "outcome" if checked.finished else "scene"
+        proposal = (f"The Path ends at the {where} `{checked.end.name}`, so it proposes "
+                    f"`finished: {'true' if checked.finished else 'false'}`.")
     expected = fields.get("expected_changes")
     lines = []
     if isinstance(expected, dict):
@@ -775,72 +828,83 @@ def _report_section(mod, path, continues_from):
         + ("\n".join(lines) + "\n" if lines else
            "Nothing: the Mod does not say. Ask me what changed all the same.\n"),
     ]
-    if continues_from is not None:
-        parts.append("### Where the last Stretch stopped\n\n"
-                     f"The last report on this Mod says play stopped at `{continues_from}`.\n"
-                     "This Stretch carries on from there.\n")
-    if proposal is not None:
-        steps = _yaml_path(path)
+    if not stop.known:
+        parts.append(STOPPED_UNKNOWN.format(
+            picked_up="The Path below starts where this Stretch picked up." if walked
+            else "Ask me where this Stretch picked up."))
+    elif stop.passage is not None:
+        parts.append(STOPPED_AT.format(passage=stop.passage))
+    if walked:
         parts.append("### The Path walked\n\n"
                      "I walked the Path this Stretch took through the Mod's Dry Run, from the\n"
-                     "Hook taken, or where the last Stretch stopped, to where play stopped.\n"
+                     "Hook taken, or where this Stretch picked up, to where play stopped.\n"
                      "Copy it into the report as `path`, exactly:\n\n"
-                     + _fenced(steps, "yaml") + "\n" + proposal + "\n")
+                     + _fenced(path_yaml(path), "yaml") + "\n" + proposal + "\n")
         where = WHERE_WITH_PATH.format(proposal=proposal)
     else:
         parts.append("### The Path walked\n\nThere is no Path for this report.\n")
         where = WHERE_WITHOUT_PATH
-    return "\n".join(parts), where, proposal is not None, mod_id
+    return _ReportParts("\n".join(parts), where, walked, mod_id)
 
 
-def _yaml_path(path):
-    """A Path as the YAML a report holds it in."""
-    lines = ["path:"]
-    for step in path:
-        if isinstance(step, str):
-            lines.append(f"  - {_scalar(step)}")
-        elif "hook" in step:
-            lines.append(f"  - hook: {_scalar(step['hook'])}")
-        else:
-            lines.append(f"  - contest: {_scalar(step['contest'])}")
-            lines.append(f"    result: {_scalar(step['result'])}")
-    return "\n".join(lines) + "\n"
+def _report_id(mod_id, world):
+    """The id of the next report on a Mod, by the convention in
+    `schema/after-action.md`: `aa-<mod>`, then `aa-<mod>-2` and so on, the
+    first that no document in the World has."""
+    from ._api import _files_of
+
+    files = {path: text for path, text in _files_of(world).items()
+             if _checks.is_scanned(path)}
+    _docs, by_id, _generated = _checks.collect_docs(files, _checks.Findings())
+    report_id, n = f"aa-{mod_id}", 1
+    while report_id in by_id:
+        n += 1
+        report_id = f"aa-{mod_id}-{n}"
+    return report_id
 
 
-def _scalar(text):
-    """Text as a YAML value: as it is when YAML reads it back the same, quoted
-    otherwise."""
-    try:
-        if _checks.yaml.safe_load(text) == text and "#" not in text:
-            return text
-    except Exception:  # noqa: BLE001 - anything YAML cannot read back is quoted
-        pass
-    return json.dumps(text, ensure_ascii=False)
-
-
-def _report(surface, mod, path, continues_from, readable):
+def _report(surface, mod, path, stop, event, world):
     """The instructions for a report Interview."""
-    section, where, has_path, mod_id = _report_section(mod, path, continues_from)
+    made = _report_parts(mod, path, stop)
+    readable = None if world is None else _readable(world)
+    report_id = None if world is None else _report_id(made.mod_id, world)
     vocab = _checks.load_vocab()["vocabularies"]["canon_change_kind"]
     kinds = "\n".join(f"  - `{kind}`: {' '.join(str(meaning).split())}"
                       for kind, meaning in vocab.items())
-    first = ("Start now by going through the Path with me." if has_path else
+    first = ("Start now by going through the Path with me." if made.walked else
              "Start now by asking me to say in my own words what happened and where "
              "play stopped.")
+    if report_id is None:
+        id_line = (f"id: aa-{made.mod_id}              # aa-{made.mod_id}-2, -3 and so on "
+                   f"for later reports on this Mod")
+        id_rule = ID_CONVENTION.format(mod_id=made.mod_id)
+    else:
+        id_line, id_rule = f"id: {report_id}", ID_GIVEN.format(report_id=report_id)
+    rules = "".join([
+        id_rule,
+        EVENT_ASKED if event is None else EVENT_GIVEN.format(event=event),
+        RAN_WALKED if made.walked else RAN_ASKED,
+        FINISHED_RULE,
+        PATH_RULE if made.walked else NO_PATH_RULE,
+    ])
     parts = [
         REPORT_OPENING,
         REPORT_PRODUCING.format(
-            mod_id=mod_id,
-            path_line="path: <the Path, exactly as given below>\n" if has_path else "",
-            path_rule=REPORT_PATH_RULE if has_path else REPORT_NO_PATH_RULE),
+            id_line=id_line,
+            mod_id=made.mod_id,
+            event_line=("event: <the id of the Event this Stretch was played at>"
+                        if event is None else f"event: {event}"),
+            ran_line="ran: true" if made.walked else "ran: <true or false>",
+            path_line="path: <the Path, exactly as given below>\n" if made.walked else "",
+            rules=rules),
         CANON_CHANGES.format(kinds=kinds, ids=IDS_INVENTED if readable is None else
                              IDS_FROM_WORLD),
-        REPORT_PHASES.format(where=where),
+        REPORT_PHASES.format(where=made.where, who=WHO_WALKED if made.walked else WHO_ASKED),
         FINISHING[surface],
     ]
     if readable is not None:
         parts.append(readable)
-    parts.append(section)
+    parts.append(made.section)
     parts.append(REPORT_START_HERE.format(first=first))
     return "\n".join(parts)
 
@@ -999,4 +1063,4 @@ def interview_report_opener(path=None):
     `interview_instructions`, or None: with none, the LLM begins by asking the
     Mod Runner to say in words what happened and where play stopped.
     """
-    return REPORT_OPENER_WITH_PATH if path else REPORT_OPENER_WITHOUT_PATH
+    return REPORT_OPENER_WITH_PATH if has_path(path) else REPORT_OPENER_WITHOUT_PATH

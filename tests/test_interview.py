@@ -325,13 +325,26 @@ class Reporting(unittest.TestCase):
         self.assertIn("There is no Path for this report", flat)
         self.assertIn("say in my own words what happened and where play stopped", flat)
 
-    def test_it_asks_ran_pcs_and_what_went_off_script(self):
+    def test_it_asks_pcs_and_what_went_off_script(self):
         for path in (SILENCED, None):
             flat = " ".join(reporting(path=path).split())
-            for asked in ("whether the Mod ran (`ran`)", "which PCs took part (`pcs`)",
-                          "what went off-script"):
+            for asked in ("which PCs took part (`pcs`)", "what went off-script"):
                 with self.subTest(asked, path=path is not None):
                     self.assertIn(asked, flat)
+
+    def test_with_no_path_it_asks_whether_the_mod_ran(self):
+        flat = " ".join(reporting().split())
+
+        self.assertIn("whether the Mod ran (`ran`)", flat)
+        self.assertIn("If it did not run", flat)
+
+    def test_a_path_walked_means_the_mod_ran(self):
+        text = reporting(path=SILENCED)
+        flat = " ".join(text.split())
+
+        self.assertNotIn("whether the Mod ran", flat)
+        self.assertNotIn("If it did not run", flat)
+        self.assertIn("\nran: true\n", text)
 
     def test_canon_changes_are_written_in_the_schemas_terms(self):
         flat = " ".join(reporting().split())
@@ -354,11 +367,56 @@ class Reporting(unittest.TestCase):
     def test_a_stretch_that_continues_another_says_where_the_last_stopped(self):
         later = ["The bell", "The bell is taken"]
 
-        text = " ".join(reporting(path=later, continues_from="The bell").split())
+        for stop in ("The bell", plotcanon.LastStop("The bell")):
+            with self.subTest(stop=stop):
+                text = " ".join(reporting(path=later, continues_from=stop).split())
 
-        self.assertIn("The last report on this Mod says play stopped at `The bell`", text)
+                self.assertIn("The last report on this Mod says play stopped at `The bell`",
+                              text)
         no_path = " ".join(reporting(continues_from="The bell").split())
         self.assertIn("The last report on this Mod says play stopped at `The bell`", no_path)
+
+    def test_when_where_the_last_stretch_stopped_is_not_known_it_says_so(self):
+        unknown = plotcanon.LastStop(known=False)
+        later = ["Who rings it", "The bell is rung"]
+
+        for path in (later, None):
+            with self.subTest(path=path):
+                text = " ".join(reporting(path=path, continues_from=unknown).split())
+
+                self.assertIn("where play stopped is not known", text)
+                self.assertNotIn("says play stopped at", text)
+        with self.assertRaises(ValueError):
+            reporting(path=later)
+
+    def test_the_first_report_on_a_mod_says_nothing_of_an_earlier_one(self):
+        text = " ".join(reporting(path=SILENCED, continues_from=plotcanon.LastStop()).split())
+
+        self.assertNotIn("The last report on this Mod", text)
+        self.assertNotIn("is not known", text)
+
+    def test_the_event_is_given_so_the_llm_need_not_ask(self):
+        text = reporting(path=SILENCED, event="e04-second-lantern")
+
+        self.assertIn("\nevent: e04-second-lantern\n", text)
+        self.assertNotIn("If you do not know which, ask me", " ".join(text.split()))
+        self.assertIn("If you do not know which, ask me", " ".join(reporting().split()))
+
+    def test_with_a_world_the_reports_id_is_worked_out(self):
+        files = plotcanon.sample_world()
+        self.assertIn("\nid: aa-the-bell-beneath\n", reporting(world=files))
+
+        files["after-actions/e04-second-lantern/aa-the-bell-beneath.md"] = \
+            files["after-actions/e02-first-lantern/aa-the-ferrymans-price.md"].replace(
+                "aa-the-ferrymans-price", "aa-the-bell-beneath")
+        text = reporting(world=files)
+
+        self.assertIn("\nid: aa-the-bell-beneath-2\n", text)
+        self.assertIn("Keep `id: aa-the-bell-beneath-2` exactly", " ".join(text.split()))
+
+    def test_without_a_world_the_id_follows_the_convention(self):
+        self.assertIn("id: aa-the-bell-beneath              # aa-the-bell-beneath-2",
+                      reporting())
 
     def test_a_world_gives_the_slugs_to_use(self):
         text = reporting(path=SILENCED, world=plotcanon.sample_world())
@@ -385,6 +443,14 @@ class Reporting(unittest.TestCase):
         with self.assertRaises(ValueError):
             instructions("report", "web", mod="## Premise\n\nNo frontmatter.\n")
 
+    def test_values_of_the_wrong_type_raise_type_error(self):
+        with self.assertRaises(TypeError):
+            reporting(continues_from=3)
+        with self.assertRaises(TypeError):
+            reporting(event=["e04-second-lantern"])
+        with self.assertRaises(TypeError):
+            instructions("report", "web", mod=3)
+
     def test_each_kind_takes_only_what_it_uses(self):
         with self.assertRaises(ValueError):
             instructions("report", "web", mod=BELL_MOD, draft=DRAFT)
@@ -392,6 +458,8 @@ class Reporting(unittest.TestCase):
             instructions("new-mod", "web", mod=BELL_MOD)
         with self.assertRaises(ValueError):
             revising(path=SILENCED)
+        with self.assertRaises(ValueError):
+            instructions("new-mod", "web", event="e04-second-lantern")
 
     def test_it_keeps_to_the_glossary(self):
         for surface in SURFACES:
