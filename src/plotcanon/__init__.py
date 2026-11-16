@@ -27,7 +27,7 @@ from ._interview import (
     interview_revise_opener,
 )
 from ._story import Contest, Exit, Passage, Section, Story, story
-from ._path import Path, check_path, path_steps
+from ._path import LastStop, Path, check_path, path_steps
 from ._twine import FromTwine, from_twine, to_twee
 from ._references import Reference, name_of, references, referrers, vocabulary_fields
 from ._api import (
@@ -42,6 +42,7 @@ from ._api import (
     check_file,
     flagged_mods,
     flags,
+    last_stop,
     load_world,
     read_directory,
     sample_script,
@@ -62,6 +63,7 @@ __all__ = [
     "Finding",
     "Flag",
     "FromTwine",
+    "LastStop",
     "Passage",
     "Path",
     "Report",
@@ -84,6 +86,7 @@ __all__ = [
     "interview_instructions",
     "interview_report_opener",
     "interview_revise_opener",
+    "last_stop",
     "load_world",
     "name_of",
     "path_steps",

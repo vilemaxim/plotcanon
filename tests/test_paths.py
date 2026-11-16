@@ -308,21 +308,43 @@ class WalkingAPath(unittest.TestCase):
         self.assertIs(walked.finished, True)
 
     def test_a_walk_may_continue_from_where_the_last_path_stopped(self):
+        stop = plotcanon.LastStop("Who rings it")
         choices = self.walk("lose", continues_from="Who rings it")
 
-        steps = plotcanon.path_steps(self.story, choices, continues_from="Who rings it")
+        steps = plotcanon.path_steps(self.story, choices, continues_from=stop,
+                                     start=stop.passage)
 
         self.assertEqual(steps, ["Who rings it",
                                  {"contest": "stop her before the last stroke",
                                   "result": "lose"},
                                  "The bell is rung"])
-        self.assertTrue(plotcanon.check_path(self.story, steps,
-                                             continues_from="Who rings it").ok)
+        self.assertTrue(plotcanon.check_path(self.story, steps, continues_from=stop).ok)
+
+    def test_a_walk_may_not_start_at_a_scene_it_does_not_continue_from(self):
+        for stop in (None, plotcanon.LastStop(), plotcanon.LastStop("The bell")):
+            with self.subTest(stop=stop), self.assertRaises(ValueError):
+                plotcanon.path_steps(self.story, [], continues_from=stop, start="Who rings it")
+
+    def test_when_where_play_stopped_is_not_known_a_walk_may_start_at_any_scene(self):
+        unknown = plotcanon.LastStop(known=False)
+        choices = self.walk("lose", continues_from="Who rings it")
+
+        steps = plotcanon.path_steps(self.story, choices, continues_from=unknown,
+                                     start="Who rings it")
+
+        self.assertEqual(steps[0], "Who rings it")
+        self.assertTrue(plotcanon.check_path(self.story, steps, continues_from=unknown).ok)
+        self.assertFalse(plotcanon.check_path(self.story, steps).ok)
 
     def test_a_walk_with_no_choices_yet(self):
         self.assertEqual(plotcanon.path_steps(self.story, []), [])
-        self.assertEqual(plotcanon.path_steps(self.story, [], continues_from="the bell"),
+        self.assertEqual(plotcanon.path_steps(self.story, [], continues_from="the bell",
+                                              start="the bell"),
                          ["The bell"])
+
+    def test_a_stop_that_is_not_known_has_no_passage(self):
+        with self.assertRaises(ValueError):
+            plotcanon.LastStop("The bell", known=False)
 
     def test_a_choice_that_is_not_one_of_the_ways_on_is_refused(self):
         down, *_ = self.walk("The sister asks them to close what was opened")
@@ -380,3 +402,60 @@ class TheSchemaDoc(unittest.TestCase):
         self.assertTrue(any(isinstance(s, dict) and "contest" in s for s in steps))
         self.assertTrue(any(isinstance(p[0], str) for p in self.paths))
         self.assertTrue(any(isinstance(p[0], dict) and "hook" in p[0] for p in self.paths))
+
+
+class WherePlayLastStopped(unittest.TestCase):
+    """`last_stop` says where play stopped on a Mod before a report, by the
+    rule `load_world` checks a Path by, so an app's walk starts there."""
+
+    def world(self, *reports):
+        files = plotcanon.sample_world()
+        for path, text in reports:
+            files[path] = text
+        return files
+
+    def test_with_no_earlier_report_a_path_starts_at_a_hook(self):
+        self.assertEqual(plotcanon.last_stop(self.world(), "the-bell-beneath"),
+                         plotcanon.LastStop())
+
+    def test_it_is_where_the_last_reports_path_stopped(self):
+        world = self.world((FIRST, report(STOPPED, finished="false")))
+
+        self.assertEqual(plotcanon.last_stop(world, "the-bell-beneath"),
+                         plotcanon.LastStop("The bell"))
+
+    def test_it_follows_several_stretches_one_after_another(self):
+        second = report("  - The bell\n  - Who rings it\n", id="aa-the-bell-beneath-2",
+                        finished="false")
+        world = self.world((FIRST, report(STOPPED, finished="false")), (SECOND, second))
+
+        self.assertEqual(plotcanon.last_stop(world, "the-bell-beneath"),
+                         plotcanon.LastStop("Who rings it"))
+        self.assertEqual(plotcanon.last_stop(world, "the-bell-beneath",
+                                             before="aa-the-bell-beneath-2"),
+                         plotcanon.LastStop("The bell"))
+        self.assertEqual(plotcanon.last_stop(world, "the-bell-beneath",
+                                             before="aa-the-bell-beneath"),
+                         plotcanon.LastStop())
+
+    def test_after_a_report_with_no_path_or_one_that_does_not_fit_it_is_not_known(self):
+        for path in (None, "  - The belfry\n"):
+            with self.subTest(path=path):
+                world = self.world((FIRST, report(path, finished="false")))
+
+                self.assertEqual(plotcanon.last_stop(world, "the-bell-beneath"),
+                                 plotcanon.LastStop(known=False))
+
+    def test_a_report_on_a_mod_that_did_not_run_is_passed_over(self):
+        did_not_run = report(None, id="aa-the-bell-beneath-2", ran="false", finished="false")
+        world = self.world((FIRST, report(STOPPED, finished="false")), (SECOND, did_not_run))
+
+        self.assertEqual(plotcanon.last_stop(world, "the-bell-beneath"),
+                         plotcanon.LastStop("The bell"))
+
+    def test_it_takes_a_loaded_world(self):
+        world = plotcanon.load_world(self.world((FIRST, report(STOPPED,
+                                                               finished="false")))).world
+
+        self.assertEqual(plotcanon.last_stop(world, "the-bell-beneath"),
+                         plotcanon.LastStop("The bell"))

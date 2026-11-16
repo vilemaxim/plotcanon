@@ -807,6 +807,24 @@ def check_report_placement(doc, by_id, f):
                          f"add it there, or fix this report")
 
 
+def reports_by_mod(docs, by_id):
+    """Each Mod's reports, in the order they are read: by event, then by id
+    (see `natural_key`). `{mod id: [report, ...]}`. A report whose Mod or
+    event does not resolve has no place in that order and is left out; it is
+    already in error."""
+    reports = {}
+    for doc in docs:
+        mod = by_id.get(doc.fm.get("mod")) if isinstance(doc.fm.get("mod"), str) else None
+        if doc.type != "after-action" or mod is None or mod.type != "mod":
+            continue
+        ordinal = ordinal_of(doc.fm.get("event"), by_id) \
+            if isinstance(doc.fm.get("event"), str) else None
+        if ordinal is not None:
+            reports.setdefault(mod.id, []).append(((ordinal, natural_key(doc.id)), doc))
+    return {mod_id: [doc for _order, doc in sorted(filed, key=lambda pair: pair[0])]
+            for mod_id, filed in reports.items()}
+
+
 def check_finished(docs, by_id, vocab, f):
     """A mod's reports, read in order, against whether the mod is finished.
 
@@ -821,20 +839,9 @@ def check_finished(docs, by_id, vocab, f):
     event does not resolve has no place in that order and is left out; it is
     already in error.
     """
-    reports = {}
-    for doc in docs:
-        mod = by_id.get(doc.fm.get("mod")) if isinstance(doc.fm.get("mod"), str) else None
-        if doc.type != "after-action" or mod is None or mod.type != "mod":
-            continue
-        ordinal = ordinal_of(doc.fm.get("event"), by_id) \
-            if isinstance(doc.fm.get("event"), str) else None
-        if ordinal is not None:
-            reports.setdefault(mod.id, []).append(((ordinal, natural_key(doc.id)), doc))
-
     unfinished = vocab["mod_states_unfinished"]
     has_run = vocab["mod_states_that_have_run"]
-    for mod_id, filed in sorted(reports.items()):
-        filed = [doc for _order, doc in sorted(filed, key=lambda pair: pair[0])]
+    for mod_id, filed in sorted(reports_by_mod(docs, by_id).items()):
         ended_by = None
         for report in filed:
             if ended_by is not None:
@@ -1181,85 +1188,92 @@ def check_dry_runs(docs, structure, f):
             report(doc.rel, message)
 
 
+class PathReader:
+    """The Paths of a World's reports, each read against its Mod's story from
+    where play stopped before it. Each story and each Path is read once."""
+
+    def __init__(self, docs, by_id):
+        from ._story import story
+
+        self._story = story
+        self.by_id = by_id
+        self.ordered = reports_by_mod(docs, by_id)
+        self.stories, self.walked = {}, {}
+
+    def told(self, mod):
+        if mod.id not in self.stories:
+            self.stories[mod.id] = self._story(mod.body)
+        return self.stories[mod.id]
+
+    def last_stop(self, mod, before=None):
+        """Where play stopped on `mod` before the report `before`, or after
+        its last report when `before` is None, as a `LastStop`: the end of the
+        Path of the last earlier report that ran; no earlier report; or not
+        known, when that report has no Path that fits, or `before` has no
+        place in the order."""
+        from ._path import LastStop, has_path
+
+        filed = self.ordered.get(mod.id, [])
+        if before is not None:
+            if before not in filed:
+                return LastStop(known=False)
+            filed = filed[:filed.index(before)]
+        earlier = [d for d in filed if d.fm.get("ran") is not False]
+        if not earlier:
+            return LastStop()
+        last = earlier[-1]
+        if not has_path(last.fm.get("path")) or not self.told(mod).playable:
+            return LastStop(known=False)
+        end = self.path_of(last, mod).end
+        return LastStop(known=False) if end is None else LastStop(end.name)
+
+    def path_of(self, doc, mod):
+        """The report's Path, read from where play stopped before it."""
+        from ._path import check_path
+
+        if doc.rel not in self.walked:
+            self.walked[doc.rel] = check_path(self.told(mod), doc.fm.get("path"),
+                                              continues_from=self.last_stop(mod, doc))
+        return self.walked[doc.rel]
+
+
 def check_paths(docs, by_id, f):
     """Each report's `path` against its Mod's Dry Run. A report with no
     `path` is not checked.
 
     A Path may start where the Path of the report before it on the same Mod
-    stopped: the last report that ran, by event and then id. When that report
-    has no Path, or one that does not fit, where it stopped is not known, and
-    the Path may start at any scene.
+    stopped (see `PathReader.last_stop`), or at any scene when that is not
+    known.
     """
-    from ._path import check_path
-    from ._story import story
+    from ._path import has_path
 
-    stories, walked = {}, {}
-
-    def told(mod):
-        if mod.id not in stories:
-            stories[mod.id] = story(mod.body)
-        return stories[mod.id]
-
-    def order(doc):
-        ev = doc.fm.get("event")
-        ordinal = ordinal_of(ev, by_id) if isinstance(ev, str) else None
-        return None if ordinal is None else (ordinal, natural_key(doc.id))
-
-    def stopped_before(doc, mod):
-        """Where play stopped before this report: a scene's name; None when a
-        Path must start at a Hook; or `...` when it is not known."""
-        mine = order(doc)
-        if mine is None:
-            return ...
-        earlier = [(order(d), d) for d in docs
-                   if d.type == "after-action" and d.fm.get("mod") == mod.id and d is not doc
-                   and d.fm.get("ran") is not False and order(d) is not None
-                   and order(d) < mine]
-        if not earlier:
-            return None
-        last = max(earlier, key=lambda pair: pair[0])[1]
-        if last.fm.get("path") in (None, []):
-            return ...
-        end = path_of(last, mod).end
-        return ... if end is None else end.name
-
-    def path_of(doc, mod):
-        """The report's Path read against its Mod's story, from where the
-        report before it stopped. Each report is read once."""
-        if doc.rel not in walked:
-            steps = doc.fm.get("path")
-            start = stopped_before(doc, mod)
-            if start is ...:
-                # Not known: let the Path start wherever its first step is.
-                first = steps[0] if isinstance(steps, list) and steps else None
-                start = first if isinstance(first, str) else None
-            walked[doc.rel] = check_path(told(mod), steps, continues_from=start)
-        return walked[doc.rel]
-
+    reader = PathReader(docs, by_id)
     for doc in docs:
-        steps = doc.fm.get("path")
-        if doc.type != "after-action" or steps is None or steps == []:
+        if doc.type != "after-action" or not has_path(doc.fm.get("path")):
             continue
         mod_id = doc.fm.get("mod")
         mod = by_id.get(mod_id) if isinstance(mod_id, str) else None
         if mod is None or mod.type != "mod":
             continue
-        if not told(mod).playable:
+        told = reader.told(mod)
+        if not told.playable:
             f.warn(doc.rel, f"has a `path`, but mod `{mod.id}` has no Dry Run to check it "
-                            f"against — {told(mod).problems[0]}")
+                            f"against — {told.problems[0]}")
             continue
-        result = path_of(doc, mod)
-        for problem in result.problems:
+        walked = reader.path_of(doc, mod)
+        for problem in walked.problems:
             f.error(doc.rel, problem)
         finished = doc.fm.get("finished")
-        if result.finished and finished is False:
-            f.warn(doc.rel, f"`path` ends at the outcome `{result.end.name}`, but the report "
-                            f"says `finished: false` — an ending reached leaves the Mod "
-                            f"nothing to play. Say `finished: true`, or correct the Path")
-        elif result.finished is False and finished is True:
-            f.warn(doc.rel, f"`path` ends at the scene `{result.end.name}`, but the report "
-                            f"says `finished: true` — play that stopped at a scene has more "
-                            f"of the Mod to play. Say `finished: false`, or correct the Path")
+        if walked.finished is None or not isinstance(finished, bool) \
+                or walked.finished == finished:
+            continue
+        if walked.finished:
+            where, why = "outcome", "an ending reached leaves the Mod nothing to play"
+        else:
+            where, why = "scene", "play that stopped at a scene has more of the Mod to play"
+        f.warn(doc.rel, f"`path` ends at the {where} `{walked.end.name}`, but the report "
+                        f"says `finished: {str(finished).lower()}` — {why}. Say "
+                        f"`finished: {str(walked.finished).lower()}`, or correct the Path")
 
 
 def run_checks(files, head=None, dry_run_structure=None):

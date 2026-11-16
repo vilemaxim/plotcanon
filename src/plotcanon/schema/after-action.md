@@ -103,7 +103,8 @@ from it:
   first step that is neither a Hook nor where the last report's Path stopped;
   a Path that ends at a Hook or a Contest. The report before is the last one
   on the same mod that ran, by event and then id. If that report has no Path,
-  where it stopped is not known, and the Path may start at any scene.
+  or one that does not fit, where it stopped is not known, and the Path may
+  start at any scene.
 - **Warnings**: a Path that ends at an ending under `## Possible Outcomes` on a
   report that says `finished: false`, or at a scene on one that says
   `finished: true`; a Path on a mod with no Dry Run, which cannot be checked.
