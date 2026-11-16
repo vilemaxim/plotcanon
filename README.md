@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.11.0"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.12.0"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.11.0"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.12.0"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -84,15 +84,19 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `name_of(world, document)` | What to call a document on a page: its title, its first alias, or for a report its Mod and Event. |
 | `vocabulary_fields(document)` | Which of a document's fields hold a value from a vocabulary, and which vocabulary. |
 | `story(mod)` | A Mod's story by the Dry Run convention, as a `Story`: its start, passages, exits, Contests and endings, and why a Dry Run cannot be built from it, if it cannot. Takes a Mod's `Document` or its text. |
+| `path_steps(story, choices, *, continues_from=None, start=None)` | The steps of a Path, as a report's `path` holds them, from the choices taken in a walk through a Dry Run. See [Paths](#paths). |
+| `check_path(story, steps, *, continues_from=None)` | A report's `path` read against its Mod's story, as a `Path`: where play stopped, whether that finishes the Mod, and what does not fit. |
+| `last_stop(world, mod, *, before=None)` | Where play stopped on a Mod before a report, or after its last one, as a `LastStop`, by the rule `load_world` checks a Path by. |
 | `to_twee(text)` | A Mod's file as a Twee 3 story, to open in Twine. |
 | `from_twine(source)` | A Twee file or a Twine 2 `.html` file (archive or published) back into a Mod's markdown, as `FromTwine`: the `markdown`, `warnings` about what does nothing in a Dry Run, and `problems` if the file could not be read. Takes text or bytes. |
 | `world_settings(source)` | A World's settings from its `world.yml`, as `WorldSettings`. `world.settings` gives the same for a loaded World. |
 | `sample_world()` | A ready-made World, as `{path: text}`. |
 | `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
 | `vocabularies()` | The allowed values for every enum field. |
-| `interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="", flags=())` | The instructions for an Interview, as one text to give an LLM as its system prompt. `kind` is `"new-mod"` or `"revise-mod"`; `surface` is `"cli"` or `"web"`. See [Interviews](#interviews). |
+| `interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="", flags=(), mod=None, path=None, continues_from=None, event=None)` | The instructions for an Interview, as one text to give an LLM as its system prompt. `kind` is `"new-mod"`, `"revise-mod"` or `"report"`; `surface` is `"cli"` or `"web"`. See [Interviews](#interviews). |
 | `interview_fix_request(errors)` | The message an app sends its LLM, in a `"web"` Interview, when the Mod file the LLM gave has errors: from the app, not the person, who has not seen the file yet, asking for the whole file again in one code block. `errors` is text the caller has already cut down to what the person may read. |
 | `interview_revise_opener()` | The first message an app sends its LLM, on the person's behalf, to open a `"revise-mod"` Interview, so the LLM speaks first, beginning with the send-back reason and each Flag. |
+| `interview_report_opener(path=None)` | The same for a `"report"` Interview: it begins with the Path, or with no Path asks the Mod Runner to say in words what happened and where play stopped. |
 | `applied(text, field, change, *, previous=None, following=None, event_ordinal)` | An entity's file with an approved Canon Change applied. See [Applying a Canon Change](#applying-a-canon-change). |
 | `unapplied(text, field, change, *, previous=None, following=None, remaining_events=(), event_ordinal)` | An entity's file with an approved Canon Change taken back out. |
 | `avoided_words(text)` | Uses in a text of words the shared glossary says to avoid, each with the term to use instead. For checking docs and prompts. |
@@ -180,6 +184,39 @@ world.settings.dry_run_structure                  # "encouraged"
 plotcanon.WorldSettings(dry_run_structure="required").text()   # the file to write
 ```
 
+## Paths
+
+An After-Action Report may give the **Path** its Stretch took through the Mod's Dry Run: the Hook taken, each scene, each Contest's result, and the ending or the scene where play stopped. It is the report's `path`, described in [`schema/after-action.md`](src/plotcanon/schema/after-action.md):
+
+```yaml
+path:
+  - hook: The sister asks them to close what was opened
+  - The descent
+  - Who rings it
+  - contest: stop her before the last stroke
+    result: win
+  - The bell is silenced
+```
+
+A Path starts at a Hook, or where the last report's Path on the same Mod stopped. `last_stop` says where that was, and `path_steps` and `check_path` follow the same rules `load_world` checks a report by, so an app's walk and the checks agree:
+
+```python
+told = plotcanon.story(mod)
+stop = plotcanon.last_stop(world, mod.id)                 # before a report not yet filed
+steps = plotcanon.path_steps(told, choices, continues_from=stop,
+                             start=stop.passage)          # or start=None, at a Hook
+walked = plotcanon.check_path(told, steps, continues_from=stop)
+walked.end         # the Passage where play stopped
+walked.finished    # True when that is an ending: it proposes `finished: true`
+walked.problems    # what does not fit, one sentence each
+```
+
+- **`LastStop`** is one of three: `LastStop()`, no earlier report, so a Path starts at a Hook; `LastStop("The bell")`, where the last report's Path stopped; `LastStop(known=False)`, an earlier report with no Path that fits, so a Path may start at any scene. Where `continues_from` is taken, a scene's name or None stands for the first two.
+- **`last_stop(world, mod, *, before=None)`** looks at the last earlier report on the Mod that ran, by event and then id. `before` is a report's id or `Document`; with None, it is after the Mod's last report.
+- **`choices`** are `Exit`s, each from the `choices` of the passage the walk has reached. From the Premise the first is a Hook; with `start`, the walk starts at that scene, which `continues_from` must allow. A Contest's result is written as the Contest and the result, and every step a Hook or a result leads to is written after it, so the last step is where play stopped. A choice that is not a way on, or a `start` the walk may not take, raises `ValueError`.
+
+`load_world` and `check_file` check a report's `path` against its Mod when a Dry Run can be built from the Mod. A step that names nothing the Mod has, cannot be reached from the step before, or takes a result its Contest does not have is an error. A Path that ends at an ending on a report that says `finished: false`, or at a scene on one that says `finished: true`, is a warning, and so is a `path` on a Mod with no Dry Run. A report without `path` is not checked.
+
 ## Twine
 
 A Mod can be edited in [Twine](https://twinery.org) and brought back. Markdown stays the Mod's source; Twine is only the format it travels in.
@@ -214,7 +251,7 @@ Twine variables, macros, HTML and styling are kept as text, with a warning that 
 
 ## Interviews
 
-An Interview is a conversation in which an LLM helps a Mod Writer write a Mod, or revise one the Plot Master sent back. plotcanon owns what the LLM is told: the frontmatter, the nine body headings, the Dry Run convention with the checks `story` makes, the phases of the work, the agency checklist and what gets a Mod sent back.
+An Interview is a conversation in which an LLM helps a Mod Writer write a Mod, or revise one the Plot Master sent back, or helps a Mod Runner write an After-Action Report. plotcanon owns what the LLM is told: for a Mod, the frontmatter, the nine body headings, the Dry Run convention with the checks `story` makes, the phases of the work, the agency checklist and what gets a Mod sent back; for a report, its frontmatter, `canon_changes` in the schema's terms and its body headings.
 
 ```python
 text = plotcanon.interview_instructions("new-mod", "web", world=readable)
@@ -225,22 +262,32 @@ text = plotcanon.interview_instructions(
     sent_back_reason="It needs a second way in.",       # may be ""
     flags=[("harbour-clerk", "The clerk was arrested at the last Event.")],
 )
+
+text = plotcanon.interview_instructions(
+    "report", "web", world=readable,
+    mod=mod_text,                                       # the Mod's file, which must have an `id`
+    path=steps,                                         # the Path walked, or None
+    continues_from=stop,                                # from last_stop, or None
+    event="e04-second-lantern",                         # or None, for the LLM to ask
+)
 ```
 
 - **`surface`**: `"cli"` is for pasting into an LLM by hand or using with Claude Code. `"web"` is for an app's own LLM, which is told to give the finished file whole, in one code block, so the app can check it.
 - **`world`**: what the person may read in the World, in any form `load_world` takes. The caller decides what that is. The text holds those documents and their slugs, and nothing else from any World. With a World, the LLM uses its slugs and lists only what is truly new under `## Proposed New Entities`. With none, every Feature gets a made-up slug and is listed there.
 - **`"revise-mod"`** starts the conversation with the send-back reason and each Flag, and keeps the draft's `id`.
+- **`"report"`** gives the LLM the Mod, what its Mod Writer expected to change (`expected_changes`), where the last Stretch stopped, and the Path, which it copies into the report as `path`. The Path proposes `finished`, and the LLM asks the Mod Runner to confirm it. It asks `pcs` and what went off-script, and `ran` only when there is no Path, since a Path walked means the Mod ran. It writes `canon_changes` in the schema's terms. With no Path, it starts by asking the Mod Runner to say in words what happened and where play stopped. With `event`, the report's Event is filled in; with a `world`, so is its `id`, the next free one by the convention (`aa-<mod>`, `aa-<mod>-2`, …) among the reports in it.
 
 Two more texts go with a `"web"` Interview, so an app holds no prompt text of its own:
 
 ```python
 first = plotcanon.interview_revise_opener()          # sent on the person's behalf, so the LLM speaks first
+first = plotcanon.interview_report_opener(steps)     # the same, for a report; None when there is no Path
 fix = plotcanon.interview_fix_request(errors_text)   # when the file the LLM gave has errors
 ```
 
 `interview_fix_request` tells the LLM the message is from the app, that the person has not seen the file yet, and to fix the errors and give the whole file again in one code block. Empty errors raise `ValueError`.
 
-An unknown `kind` or `surface`, a `"revise-mod"` with no draft or a draft with no `id`, and a `"new-mod"` given a draft raise `ValueError`. The text keeps to the shared glossary (`avoided_words` finds nothing in it), though what a World or a draft holds is passed through as written. So do the fix request and the opener, though the errors are passed through as written.
+An unknown `kind` or `surface`, a `"revise-mod"` with no draft or a draft with no `id`, a `"report"` with no Mod, a Mod with no `id` or a Path that does not fit the Mod's Dry Run, and a kind given a parameter that only another kind takes (a draft, send-back reason or Flags; a Mod, Path, `continues_from` or `event`) raise `ValueError`. A draft, Mod or `event` that is not text, and a `continues_from` that is not a `LastStop`, a scene's name or None, raise `TypeError`. The text keeps to the shared glossary (`avoided_words` finds nothing in it), though what a World or a draft holds is passed through as written. So do the fix request and the opener, though the errors are passed through as written.
 
 `plotcanon instructions --write FILE` writes the `"cli"` instructions for a new Mod, with no World, for larp-llm to copy in.
 
