@@ -2,6 +2,7 @@
 the app's LLM checks a draft Mod against the World's Canon and the other
 drafts waiting for approval, and reports to the Plot Master."""
 
+import re
 import unittest
 
 import plotcanon
@@ -153,14 +154,22 @@ class WhatIsRefused(unittest.TestCase):
         with self.assertRaises(TypeError):
             reconciling(findings="one finding")
 
+    def test_a_finding_is_a_finding_or_text(self):
+        class LooksLikeOne:
+            message = "a message"
+
+        with self.assertRaises(TypeError):
+            reconciling(findings=[LooksLikeOne()])
+
 
 SAMPLE = """\
-The draft is mostly sound.
+Verdict: conflicts, do not approve yet
 
 ## Conflicts
 
 - `ysolde-marr`, `the-salt-ledger`: the Mod has her give an order at
   `e03-storm-moon`, but she is `final-death` as of `e02-first-lantern`.
+  Source: `canon/npcs/ysolde-marr.md`: `status`
   Options: a flashback, or another captain.
 
 ## Warnings
@@ -265,6 +274,97 @@ class ReadingTheReport(unittest.TestCase):
     def test_the_text_must_be_text(self):
         with self.assertRaises(TypeError):
             plotcanon.read_reconciliation(None)
+
+
+class TheDraftsAreGivenOnce(unittest.TestCase):
+    """The plot team's World holds `inbox/`, so the draft and the other drafts
+    are in it too. They are given only in their own sections."""
+
+    def test_the_draft_and_the_other_drafts_are_left_out_of_the_world(self):
+        files = plotcanon.sample_world()
+        files["inbox/the-salt-ledger.md"] = DRAFT
+        files["inbox/the-captains-last-order.md"] = OTHER
+
+        text = reconciling(world=files)
+
+        self.assertEqual(text.count("A clerk keeps two ledgers"), 1)
+        self.assertEqual(text.count("The captain sails at dusk"), 1)
+        self.assertNotIn("### inbox/the-salt-ledger.md", text)
+        self.assertNotIn("| `the-salt-ledger` |", text)
+        self.assertIn("The Guildmaster's Daughter", text)   # a draft not given stays
+
+    def test_it_says_the_draft_is_not_evidence_that_its_entities_exist(self):
+        flat = " ".join(reconciling().split())
+
+        self.assertIn("left out of the World", flat)
+        self.assertIn("exists only if a document under \"The World\" has it", flat)
+
+
+class FirstPerson(unittest.TestCase):
+    def test_the_instructions_never_speak_as_a_person(self):
+        for surface, text in (("web", reconciling()), ("cli", instructions("cli")),
+                              ("review", plotcanon.world_review_instructions(
+                                  "web", world=plotcanon.sample_world()))):
+            # The documents given are passed through as written.
+            own = re.sub(r"(`{3,})markdown\n.*?\n\1\n", "", text, flags=re.S)
+            own = re.sub(r"`[^`\n]*`", "", own)   # a Mod Writer's marker, such as `I THINK THIS EXISTS`
+            with self.subTest(surface):
+                self.assertEqual(re.findall(r"\b(?:I|me|my|I'm)\b", own), [])
+
+
+class TheVerdict(unittest.TestCase):
+    def test_the_instructions_ask_for_a_verdict_and_sources_and_options(self):
+        flat = " ".join(reconciling().split())
+
+        for verdict in plotcanon.RECONCILIATION_VERDICTS:
+            with self.subTest(verdict):
+                self.assertIn(f"Verdict: {verdict}", flat)
+        self.assertIn("Source:", flat)
+        self.assertIn("Options:", flat)
+
+    def test_the_verdicts(self):
+        self.assertEqual(plotcanon.RECONCILIATION_VERDICTS, (
+            "clean", "clean with warnings", "conflicts, do not approve yet"))
+
+    def test_the_verdict_is_read(self):
+        self.assertEqual(plotcanon.read_reconciliation(SAMPLE).verdict,
+                         "conflicts, do not approve yet")
+
+    def test_a_missing_or_unknown_verdict_is_a_problem(self):
+        for text in (SAMPLE.replace("Verdict: conflicts, do not approve yet\n", ""),
+                     SAMPLE.replace("conflicts, do not approve yet", "fine")):
+            with self.subTest(text.splitlines()[0]):
+                read = plotcanon.read_reconciliation(text)
+
+                self.assertIsNone(read.verdict)
+                self.assertEqual(len(read.problems), 1, read.problems)
+
+    def test_a_verdict_the_findings_do_not_bear_out_is_a_problem(self):
+        read = plotcanon.read_reconciliation(SAMPLE.replace(
+            "Verdict: conflicts, do not approve yet", "Verdict: clean"))
+
+        self.assertEqual(read.verdict, "clean")
+        self.assertEqual(len(read.problems), 1, read.problems)
+
+    def test_a_conflict_with_no_source_or_options_is_a_problem(self):
+        text = SAMPLE.replace("  Source: `canon/npcs/ysolde-marr.md`: `status`\n", "")
+
+        self.assertEqual(len(plotcanon.read_reconciliation(text).problems), 1)
+
+
+class TheOtherDraftsNamed(unittest.TestCase):
+    def test_the_other_drafts_a_report_names_are_read(self):
+        read = plotcanon.read_reconciliation(SAMPLE, draft_ids=["the-captains-last-order"])
+
+        self.assertEqual(read.other_drafts, ("the-captains-last-order",))
+        self.assertEqual(read.problems, ())
+
+    def test_naming_a_draft_that_was_not_given_is_a_problem(self):
+        read = plotcanon.read_reconciliation(SAMPLE, draft_ids=["the-guildmasters-daughter"])
+
+        self.assertEqual(read.other_drafts, ())
+        self.assertEqual(len(read.problems), 1, read.problems)
+        self.assertIn("the-captains-last-order", read.problems[0])
 
 
 if __name__ == "__main__":

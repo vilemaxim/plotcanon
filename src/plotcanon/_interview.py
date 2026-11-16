@@ -9,14 +9,14 @@ now, and adds the Dry Run convention from `schema/mod.md` in the same terms
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from . import _checks
+from ._prompt import (AGENCY_QUESTIONS, check_surface, draft_id, fenced, front,
+                      readable as world_section)
 from ._path import as_last_stop, check_path, has_path, path_yaml
 
 KINDS = ("new-mod", "revise-mod", "report")
-SURFACES = ("web", "cli")
 
 
 OPENING = {
@@ -434,22 +434,6 @@ fix what it reports and give me the whole file again.
 }
 
 
-AGENCY_QUESTIONS = """\
-1. Can the players fail, and is failure interesting? One outcome is a cutscene.
-2. Is there more than one way in? Two or three hooks, not one.
-3. Does the outcome turn on player choices, or is it decided in the writeup?
-4. Are the PCs the protagonists, or the audience for something NPCs are doing?
-5. Does anything remove player control: capture, compulsion, forced loss? If
-   so, is it bounded, brief, and flagged for a safety brief?
-6. Is engagement gated on one build, skill, or item that only one player has?
-7. Does it need a specific player to turn up? What happens if they do not?
-8. Does it invalidate something a player already earned or established in
-   play? Flag this every time: it is the one that does lasting damage.
-9. Is any NPC unbeatable by fiat? If so, can players tell before they commit?
-10. Does it need a content brief or an opt-out?
-"""
-
-
 CHECKLIST = """\
 ## The checklist
 
@@ -532,9 +516,7 @@ def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_r
     """
     if kind not in KINDS:
         raise ValueError(f"an Interview's kind is one of {', '.join(KINDS)}, not {kind!r}")
-    if surface not in SURFACES:
-        raise ValueError(f"an Interview's surface is one of {', '.join(SURFACES)}, "
-                         f"not {surface!r}")
+    check_surface(surface, "an Interview")
     if kind != "report" and any(value is not None
                                 for value in (mod, path, continues_from, event)):
         raise ValueError("only a report Interview takes a Mod, a Path, where the last "
@@ -553,7 +535,7 @@ def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_r
         revising = _draft_section(draft, sent_back_reason, flags)
     elif draft is not None or sent_back_reason or flags:
         raise ValueError("a new Mod has no draft, send-back reason or Flags")
-    readable = None if world is None else _readable(world)
+    readable = None if world is None else world_section(world, WORLD_INTRO)
     parts = [
         OPENING[kind],
         PRODUCING,
@@ -805,7 +787,7 @@ def _report_parts(mod, path, stop):
     and the Path walked, if any, read into `_ReportParts`."""
     from ._story import story
 
-    mod_id, fields = _front(mod, "the Mod")
+    mod_id, fields = front(mod, "the Mod")
     told = story(mod)
     walked = has_path(path)
     if walked:
@@ -827,7 +809,7 @@ def _report_parts(mod, path, stop):
     parts = [
         "## The Mod\n\n"
         f"The report is on `{mod_id}`. Its file:\n\n"
-        + _fenced(mod, "markdown"),
+        + fenced(mod, "markdown"),
         "### What its Mod Writer expected to change\n\n"
         + ("\n".join(lines) + "\n" if lines else
            "Nothing: the Mod does not say. Ask me what changed all the same.\n"),
@@ -843,7 +825,7 @@ def _report_parts(mod, path, stop):
                      "I walked the Path this Stretch took through the Mod's Dry Run, from the\n"
                      "Hook taken, or where this Stretch picked up, to where play stopped.\n"
                      "Copy it into the report as `path`, exactly:\n\n"
-                     + _fenced(path_yaml(path), "yaml") + "\n" + proposal + "\n")
+                     + fenced(path_yaml(path), "yaml") + "\n" + proposal + "\n")
         where = WHERE_WITH_PATH.format(proposal=proposal)
     else:
         parts.append("### The Path walked\n\nThere is no Path for this report.\n")
@@ -870,7 +852,7 @@ def _report_id(mod_id, world):
 def _report(surface, mod, path, stop, event, world):
     """The instructions for a report Interview."""
     made = _report_parts(mod, path, stop)
-    readable = None if world is None else _readable(world)
+    readable = None if world is None else world_section(world, WORLD_INTRO)
     report_id = None if world is None else _report_id(made.mod_id, world)
     vocab = _checks.load_vocab()["vocabularies"]["canon_change_kind"]
     kinds = "\n".join(f"  - `{kind}`: {' '.join(str(meaning).split())}"
@@ -922,66 +904,9 @@ then given in full.
 """
 
 
-def _fenced(text, info=""):
-    """`text` in a code block whose fence no run of backticks in it can close."""
-    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
-    fence = "`" * max(3, longest + 1)
-    return f"{fence}{info}\n{text.rstrip(chr(10))}\n{fence}\n"
-
-
-def _name(fields, doc_id):
-    aliases = fields.get("aliases")
-    for value in (fields.get("title"), *(aliases[:1] if isinstance(aliases, list) else ())):
-        if isinstance(value, str) and value.strip():
-            return " ".join(value.split())
-    return doc_id
-
-
-def _readable(world):
-    """The section listing what the person may read: an index of slugs, then
-    each document's file exactly as given."""
-    from ._api import _files_of
-
-    files = {path: text for path, text in _files_of(world).items()
-             if _checks.is_scanned(path)}
-    docs, _by_id, _generated = _checks.collect_docs(files, _checks.Findings())
-    index = [f"| `{d.id}` | {d.type} | {_name(d.fm, d.id).replace('|', '/')} |"
-             for d in docs if isinstance(d.id, str)]
-    parts = [WORLD_INTRO]
-    if index:
-        parts.append("| Slug | Type | Name |\n|---|---|---|\n" + "\n".join(index) + "\n")
-    else:
-        parts.append("There are none.\n")
-    for path in sorted(files, key=_checks.scan_order):
-        parts.append(f"### {path}\n\n" + _fenced(files[path], "markdown"))
-    return "\n".join(parts)
-
-
-def _draft_id(draft):
-    """The `id` in a draft's frontmatter. Raises ValueError when there is
-    none to read."""
-    return _front(draft, "the draft")[0]
-
-
-def _front(text, what):
-    """The `id` in a file's frontmatter, and its fields. Raises ValueError
-    when there is no `id` to read."""
-    if not isinstance(text, str):
-        raise TypeError(f"{what} is the text of its file, not {type(text).__name__}")
-    raw, _body = _checks.split_frontmatter(text)
-    try:
-        fields = None if raw is None else _checks.yaml.load(raw, Loader=_checks.Loader)  # noqa: S506
-    except Exception:  # noqa: BLE001 - any YAML that cannot be read
-        fields = None
-    doc_id = fields.get("id") if isinstance(fields, dict) else None
-    if not isinstance(doc_id, str) or not doc_id.strip():
-        raise ValueError(f"{what} has no `id` in its frontmatter")
-    return doc_id.strip(), fields
-
-
 def _draft_section(draft, reason, flags):
     """The draft being revised, why it was sent back and its open Flags."""
-    doc_id = _draft_id(draft)
+    doc_id = draft_id(draft)
     if not isinstance(reason, str):
         raise TypeError("the send-back reason is text")
     lines = []
@@ -1002,7 +927,7 @@ def _draft_section(draft, reason, flags):
         "### Open Flags on it\n\n"
         "Each names the Feature it touches, and what changed.\n\n"
         + ("\n".join(lines) + "\n" if lines else "There are no open Flags on it.\n"),
-        "### The draft as it stands\n\n" + _fenced(draft, "markdown"),
+        "### The draft as it stands\n\n" + fenced(draft, "markdown"),
     ]
     return "\n".join(parts)
 

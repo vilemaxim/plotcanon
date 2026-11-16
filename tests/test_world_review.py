@@ -55,6 +55,9 @@ class TheInstructions(unittest.TestCase):
 
         self.assertIn("WARN canon/npcs/old-fenn.md: as_of is old", text)
 
+    def test_every_claim_cites_ids_and_files(self):
+        self.assertIn("Files:", reviewing())
+
     def test_it_is_one_report_not_a_conversation(self):
         self.assertIn("one report, not a conversation", " ".join(reviewing().split()))
 
@@ -96,6 +99,7 @@ Four Events have run. Two Plots are open and one is quietly dormant.
 
 - `feud-of-vale-and-marr`: marked `open`, but no Mod has touched it since
   `e01-low-tide`.
+  Files: `canon/plots/feud-of-vale-and-marr.md`
 - `old-fenn`: `as_of` is `e01-low-tide`, three Events behind.
 
 ## Watch list

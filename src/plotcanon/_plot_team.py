@@ -15,7 +15,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from ._interview import AGENCY_QUESTIONS, SURFACES, _fenced, _front, _readable
+from ._api import Finding
+from ._prompt import AGENCY_QUESTIONS, check_surface, draft_id, fenced, readable
+from ._story import _lines
 
 RECONCILIATION_SECTIONS = (
     "Conflicts", "Warnings", "Missing links", "Slug mapping", "New entities",
@@ -25,6 +27,8 @@ RECONCILIATION_SECTIONS = (
 WORLD_REVIEW_SECTIONS = (
     "State of the World", "Drift", "Watch list", "Weaving", "Coverage",
 )
+
+RECONCILIATION_VERDICTS = ("clean", "clean with warnings", "conflicts, do not approve yet")
 
 # Sections written as a few sentences, whose findings need not name ids.
 PROSE_SECTIONS = ("State of the World",)
@@ -55,9 +59,20 @@ line with `- ` at the start of the line, and use no `##` headings of your own.
 
 def _shape(sections, example_ids, example_text, prose=""):
     headings = "\n".join(f"## {heading}" for heading in sections)
-    return SHAPE.format(headings=_fenced(headings, "markdown").rstrip("\n"),
+    return SHAPE.format(headings=fenced(headings, "markdown").rstrip("\n"),
                         prose=prose, example_ids="`, `".join(example_ids),
                         example_text=example_text)
+
+
+START_HERE = """\
+## Start here
+
+Write the report now, in the shape above, and nothing else.
+"""
+
+
+DONT_REPEAT = ("Do not repeat the check findings in the report: the plot team has "
+               "them already. Report only what they miss.")
 
 
 ONE_REPORT = """\
@@ -121,7 +136,9 @@ to find what the checks cannot.
 **Slug mapping.** The Mod Writer may not have seen the World, so the ids in
 `features` and in `## Proposed New Entities` are guesses until you check
 them. For each one, look the entity up by the name the Mod Writer wrote, in
-the `title` and `aliases` of everything in the World, not by the guessed id:
+the `title` and `aliases` of everything in the World, not by the guessed id.
+An entity exists only if a document under "The World" has it: a draft that
+proposes it, this one or another, does not make it exist.
 
 - If one entity matches, give the real id. Do this whether the Mod Writer
   marked it `NEW` or `I THINK THIS EXISTS`: that mark is a guess too.
@@ -160,8 +177,7 @@ RECONCILIATION_DONT = """\
   decide. If you have a view, give it in one line and say it is yours.
 - Do not invent Canon to fill a gap. "Canon does not say" is a finding, and a
   useful one.
-- Do not repeat the check findings, under "The checks" below. The Plot
-  Master has them already. Report only what they miss.
+- {dont_repeat}
 - Do not soften a real conflict to be agreeable. A missed contradiction
   reaches the field, and a player finds it at 2am.
 - Never write a change as though you made it.
@@ -178,7 +194,26 @@ the Plot Master decides.
 """
 
 
-SLUG_EXAMPLE = """\
+RECONCILIATION_SHAPE = """\
+Start the report with one line, before the first heading, giving the
+verdict, which is one of these:
+
+- `Verdict: conflicts, do not approve yet`, when Conflicts has any finding.
+- `Verdict: clean with warnings`, when Conflicts has none but another section
+  has.
+- `Verdict: clean`, when every section is `None.`
+
+Under Conflicts, give each finding two more lines under its bullet: `Source:`
+and the file and field that hold what Canon says, and `Options:` and the ways
+out, in a line each:
+
+```markdown
+- `ysolde-marr`, `the-salt-ledger`: the Mod has her give an order at the
+  third Event, but she is `final-death` as of the second.
+  Source: `canon/npcs/ysolde-marr.md`: `status`
+  Options: a flashback; another captain gives the order.
+```
+
 Under Slug mapping, start each bullet with the Mod Writer's guessed id alone,
 then say what it is:
 
@@ -188,54 +223,70 @@ then say what it is:
 - `the-captain`: AMBIGUOUS. Could be `ysolde-marr` or `harrow-dunmore`.
 ```
 
-Under Other drafts, start each bullet with the other draft's id, then the ids
-of what the two drafts both touch.
+Under Other drafts, start each bullet with the other draft's id, exactly as
+it is under "The other drafts", then the ids of what the two drafts both
+touch.
 """
 
 
 def _check_findings(findings, surface):
     if findings is None and surface == "cli":
-        return """\
-## The checks
-
-Run plotcanon's checks on the World first (`plotcanon validate`), and read
-what they find. Do not repeat their findings in your report: the Plot Master
-has them already.
-"""
+        return ("## The checks\n\nRun plotcanon's checks on the World first "
+                "(`plotcanon validate`), and read\nwhat they find. " + DONT_REPEAT + "\n")
     if isinstance(findings, str):
         raise TypeError("the check findings are a list, each a Finding or text")
     lines = []
     for finding in findings or ():
-        if not isinstance(finding, str) and not hasattr(finding, "message"):
+        if not isinstance(finding, (str, Finding)):
             raise TypeError("each check finding is a Finding or text")
         lines.append(f"- {' '.join(str(finding).split())}")
-    body = ("\n".join(lines) + "\n") if lines else "They found nothing.\n"
-    return ("## The checks\n\nplotcanon's checks have already run. Do not repeat their "
-            "findings in your\nreport: the Plot Master has them already. They "
-            "found:\n\n" + body)
+    found = ("They found:\n\n" + "\n".join(lines) + "\n") if lines else "They found nothing.\n"
+    return ("## The checks\n\nplotcanon's checks have already run. " + DONT_REPEAT
+            + "\n\n" + found)
 
 
-def _world(world, surface, what):
-    if world is not None:
-        return _readable(world)
-    if surface == "web":
-        raise ValueError(f"{what} on the web needs the World")
-    return """\
+WORLD_GIVEN = """\
+## The World
+
+These are the World's documents, as the plot team reads them. Use
+nothing else from the World, and do not guess at what is not here. Each is
+listed by its id, then given in full.{left_out}
+"""
+
+DRAFTS_LEFT_OUT = """ The draft and the other drafts are
+left out of the World here, and given in their own sections below, as they
+stand now."""
+
+WORLD_FROM_FILES = """\
 ## The World
 
 Read the World from the files here: `canon/`, `mods/` and `after-actions/`,
-with `schema/` for what each field means and the values each may take.
+with `schema/` for what each field means and the values each may take.{left_out}
 """
+
+INBOX_LEFT_OUT = """ The
+drafts in `inbox/` are not part of the World for this: they are under "The
+draft" and "The other drafts"."""
+
+
+def _world(world, surface, what, *, drafts=None):
+    """The World section. `drafts` is the ids of the drafts given in their own
+    sections, for a Reconciliation, which are left out of the World."""
+    if world is not None:
+        left_out = "" if drafts is None else DRAFTS_LEFT_OUT
+        return readable(world, WORLD_GIVEN.format(left_out=left_out), leave_out=drafts or ())
+    if surface == "web":
+        raise ValueError(f"{what} on the web needs the World")
+    return WORLD_FROM_FILES.format(left_out="" if drafts is None else INBOX_LEFT_OUT)
 
 
 def _draft(draft, surface):
     if draft is None:
         if surface == "web":
             raise ValueError("a Reconciliation needs the draft it checks")
-        return ("## The draft\n\nThe draft to check is the one I name. Read it in "
-                "`inbox/`.\n")
-    doc_id = _front(draft, "the draft")[0]
-    return f"## The draft: `{doc_id}`\n\n" + _fenced(draft, "markdown")
+        return ("## The draft\n\nThe draft to check is the one named in the request. "
+                "Read it in `inbox/`.\n")
+    return f"## The draft: `{draft_id(draft)}`\n\n" + fenced(draft, "markdown")
 
 
 def _other_drafts(drafts, surface):
@@ -247,17 +298,11 @@ def _other_drafts(drafts, surface):
     parts = ["## The other drafts\n\nThese are the other drafts waiting for "
              "approval.\n"]
     for draft in drafts or ():
-        doc_id = _front(draft, "another draft")[0]
-        parts.append(f"### `{doc_id}`\n\n" + _fenced(draft, "markdown"))
+        parts.append(f"### `{draft_id(draft, 'another draft')}`\n\n"
+                     + fenced(draft, "markdown"))
     if len(parts) == 1:
         parts = ["## The other drafts\n\nNo other drafts are waiting for approval.\n"]
     return "\n".join(parts)
-
-
-def _surface(surface, what):
-    if surface not in SURFACES:
-        raise ValueError(f"{what}'s surface is one of {', '.join(SURFACES)}, "
-                         f"not {surface!r}")
 
 
 def reconciliation_instructions(surface, *, draft=None, world=None, other_drafts=None,
@@ -276,31 +321,37 @@ def reconciliation_instructions(surface, *, draft=None, world=None, other_drafts
     so the LLM does not repeat them; empty when there are none.
 
     On "web" the draft and the World are needed. On "cli" each may be left
-    out: the LLM then reads the World from the files, the draft I name and
-    the other drafts from `inbox/`, and runs the checks itself.
+    out: the LLM then reads the World from the files, the draft named in the
+    request and the other drafts from `inbox/`, and runs the checks itself.
+    The draft and the other drafts are left out of the World as given, since
+    the plot team's World holds `inbox/`: they are given once, in their own
+    sections.
 
     Raises ValueError for an unknown surface, a "web" call missing the draft
     or the World, or a draft with no `id`. Raises TypeError for a draft that
     is not text, or other drafts or findings given as one text rather than a
     list.
     """
-    _surface(surface, "a Reconciliation")
+    check_surface(surface, "a Reconciliation")
+    drafts = _other_drafts(other_drafts, surface)
+    given = _draft(draft, surface)
+    ids = ([] if draft is None else [draft_id(draft)]) + [
+        draft_id(other, "another draft") for other in other_drafts or ()]
     parts = [
         RECONCILIATION_OPENING,
         ONE_REPORT,
         TIME_RULE,
         RECONCILIATION_CHECKS.format(agency=AGENCY_QUESTIONS),
-        RECONCILIATION_DONT,
-        _shape(RECONCILIATION_SECTIONS, ("ysolde-marr", "the-salt-ledger"),
-               "the Mod has her give an order at the third Event, but she is "
-               "`final-death` as of the second."),
-        SLUG_EXAMPLE,
+        RECONCILIATION_DONT.format(dont_repeat=DONT_REPEAT),
+        _shape(RECONCILIATION_SECTIONS, ("tobren-vale",),
+               '"her brother" in the second scene is Tobren, and `features` '
+               "leaves him out."),
+        RECONCILIATION_SHAPE,
         _check_findings(findings, surface),
-        _world(world, surface, "a Reconciliation"),
-        _draft(draft, surface),
-        _other_drafts(other_drafts, surface),
-        "## Start here\n\nWrite the report now, in the shape above, and nothing "
-        "else.\n",
+        _world(world, surface, "a Reconciliation", drafts=ids),
+        given,
+        drafts,
+        START_HERE,
     ]
     return "\n".join(parts)
 
@@ -401,6 +452,17 @@ Drift, what needs the plot team now, worst first. Under Watch list, what is
 not wrong yet but is heading that way. Under Weaving, the suggestions, least
 disturbing first. Under Coverage, what is used too much and too little, and
 the Events to come with nothing planned.
+
+Every claim cites the ids it is about and the files that show it, so the plot
+team can check it in ten seconds. Under each bullet outside State of the
+World, give a line `Files:` and the path of each of those files, in
+backticks:
+
+```markdown
+- `feud-of-vale-and-marr`: marked `open`, but no Mod has touched it in five
+  Events.
+  Files: `canon/plots/feud-of-vale-and-marr.md`, `mods/tideward/the-low-tide-market.md`
+```
 """
 
 
@@ -423,7 +485,7 @@ def world_review_instructions(surface, *, world=None, findings=None):
     Raises ValueError for an unknown surface or a "web" call with no World.
     Raises TypeError for findings given as one text rather than a list.
     """
-    _surface(surface, "a World review")
+    check_surface(surface, "a World review")
     parts = [
         WORLD_REVIEW_OPENING,
         ONE_REPORT,
@@ -436,8 +498,7 @@ def world_review_instructions(surface, *, world=None, findings=None):
         WORLD_REVIEW_SECTION_NOTES,
         _check_findings(findings, surface),
         _world(world, surface, "a World review"),
-        "## Start here\n\nWrite the report now, in the shape above, and nothing "
-        "else.\n",
+        START_HERE,
     ]
     return "\n".join(parts)
 
@@ -466,7 +527,8 @@ class ReportSection:
 class ReadReport:
     """A Reconciliation or a World review, read: its `sections` in the order
     written, and the `problems` with its shape, each as a sentence. Text
-    before the first heading is not kept."""
+    before the first heading is not kept, but for a Reconciliation's
+    verdict."""
 
     sections: tuple
     problems: tuple
@@ -476,25 +538,25 @@ class ReadReport:
         return next((s for s in self.sections if s.heading == heading), None)
 
 
-_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+@dataclass(frozen=True)
+class ReadReconciliation(ReadReport):
+    """A Reconciliation, read. As well as its sections and problems:
+    `verdict`, one of RECONCILIATION_VERDICTS, or None when it gives none of
+    them; and `other_drafts`, the id of each other draft its Other drafts
+    section names, in order, once each."""
+
+    verdict: str | None = None
+    other_drafts: tuple = ()
+
+
 _HEADING = re.compile(r"^##\s+(?!#)(.*?)\s*#*\s*$")
 _IDS = re.compile(r"^((?:`[^`\s]+`\s*,\s*)*`[^`\s]+`)\s*:\s*")
+_VERDICT = re.compile(r"^[\W_]*verdict[\W_]*:(.*)$", re.I)
 
 
-def _lines_outside_fences(text):
-    """Each line of `text`, with whether it is outside a code block."""
-    fence = None
-    for line in text.splitlines():
-        opened = _FENCE.match(line)
-        if fence is None:
-            if opened:
-                fence = opened.group(1)
-            yield line, fence is None
-        else:
-            if opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence) \
-                    and not line.strip()[len(opened.group(1)):].strip():
-                fence = None
-            yield line, False
+def _plain(text):
+    """Text as lowercase words, for comparing what an LLM wrote."""
+    return " ".join(re.findall(r"[a-z]+", text.lower()))
 
 
 def _finding(lines):
@@ -508,26 +570,31 @@ def _finding(lines):
 
 def _section(heading, lines):
     findings, current = [], None
-    for line, outside in lines:
-        if outside and line.startswith("- "):
+    for line, fenced_line in lines:
+        if not fenced_line and line.startswith("- "):
             current = [line]
             findings.append(current)
         elif current is not None:
             current.append(line)
-    text = "\n".join(line for line, _outside in lines).strip()
+    text = "\n".join(line for line, _fenced in lines).strip()
     return ReportSection(heading, text, tuple(_finding(f) for f in findings))
 
 
 def _read(text, expected, what):
+    """The sections and problems of a report, and the lines before its first
+    heading."""
     if not isinstance(text, str):
         raise TypeError(f"{what} is text, not {type(text).__name__}")
-    headed = []
-    for line, outside in _lines_outside_fences(text):
-        heading = _HEADING.match(line) if outside else None
+    before, headed = [], []
+    for line, fenced_line in _lines(text):
+        line = line.rstrip("\r\n")
+        heading = None if fenced_line else _HEADING.match(line)
         if heading:
             headed.append((heading.group(1), []))
         elif headed:
-            headed[-1][1].append((line, outside))
+            headed[-1][1].append((line, fenced_line))
+        elif not fenced_line:
+            before.append(line)
     problems, sections, seen = [], [], []
     for heading, lines in headed:
         if heading not in expected:
@@ -549,31 +616,99 @@ def _read(text, expected, what):
             if not finding.ids:
                 problems.append(f"a finding under `## {section.heading}` does not start "
                                 f"with the ids it is about: {finding.text.splitlines()[0]!r}")
-    return ReadReport(tuple(sections), tuple(problems))
+    return ReadReport(tuple(sections), tuple(problems)), before
 
 
-def read_reconciliation(text):
-    """Read what an LLM wrote for a Reconciliation into its sections and
-    findings. Each section is one of RECONCILIATION_SECTIONS, and `problems`
-    says where the text strays from the shape the instructions ask for: a
-    heading missing, written twice, out of order or not one of them, or a
-    finding that does not start with the ids it is about. A section headed
-    as asked is read even when there are problems elsewhere.
+def _verdict(before, read):
+    """The verdict in the lines before the first heading, and its problems.
+    It is checked against the findings only when every heading is as asked."""
+    written = next((m.group(1) for m in map(_VERDICT.match, before) if m), None)
+    if written is None:
+        return None, ["there is no verdict: a line `Verdict: ...` before the first heading"]
+    verdict = next((v for v in RECONCILIATION_VERDICTS if _plain(v) == _plain(written)), None)
+    if verdict is None:
+        return None, [f"the verdict {written.strip()!r} is not one of "
+                      f"{', '.join(RECONCILIATION_VERDICTS)}"]
+    if read.problems and any(p.startswith(("there is no", "the headings", "`##"))
+                             for p in read.problems):
+        return verdict, []
+    if read.section("Conflicts").findings:
+        due = RECONCILIATION_VERDICTS[2]
+    elif any(section.findings for section in read.sections):
+        due = RECONCILIATION_VERDICTS[1]
+    else:
+        due = RECONCILIATION_VERDICTS[0]
+    if verdict != due:
+        return verdict, [f"the verdict is {verdict!r}, but the findings make it {due!r}"]
+    return verdict, []
 
-    The shape: each heading is a line `## <heading>`. Under it, each finding
-    is a bullet at the start of a line, `- `, then its ids, each in
-    backticks and separated by commas, then `:` and the finding. Lines under
-    a bullet, indented by two spaces, belong to it. `None.` means a section
-    has no findings. Headings and bullets inside a code block are not read.
-    Raises TypeError when `text` is not text.
+
+def _conflicts_problems(read):
+    conflicts = read.section("Conflicts")
+    problems = []
+    for finding in conflicts.findings if conflicts else ():
+        starts = {line.split(":", 1)[0].strip().lower() for line in finding.text.splitlines()}
+        if not {"source", "options"} <= starts:
+            problems.append(f"a conflict does not give both `Source:` and `Options:`: "
+                            f"{finding.text.splitlines()[0]!r}")
+    return problems
+
+
+def _named_drafts(read, draft_ids):
+    section = read.section("Other drafts")
+    named, problems = [], []
+    for finding in section.findings if section else ():
+        if not finding.ids:
+            continue
+        first = finding.ids[0]
+        if draft_ids is not None and first not in draft_ids:
+            problems.append(f"a finding under `## Other drafts` starts with `{first}`, "
+                            f"which is not one of the other drafts given")
+        elif first not in named:
+            named.append(first)
+    return tuple(named), problems
+
+
+def read_reconciliation(text, *, draft_ids=None):
+    """Read what an LLM wrote for a Reconciliation, as a ReadReconciliation:
+    its verdict, its sections and findings, the other drafts it names, and
+    `problems` where the text strays from the shape the instructions ask for.
+    Each section is one of RECONCILIATION_SECTIONS. A section headed as asked
+    is read even when there are problems elsewhere.
+
+    The shape: first a line `Verdict: <one of RECONCILIATION_VERDICTS>`. Then
+    each heading is a line `## <heading>`. Under it, each finding is a bullet
+    at the start of a line, `- `, then its ids, each in backticks and
+    separated by commas, then `:` and the finding. Lines under a bullet,
+    indented by two spaces, belong to it. Each Conflict has a `Source:` line
+    and an `Options:` line. Under Other drafts, the first id is the other
+    draft's. `None.` means a section has no findings. Headings and bullets
+    inside a code block are not read.
+
+    The problems: no verdict, or one that is not one of the verdicts or that
+    the findings do not bear out (checked only when the headings are as
+    asked); a heading missing, written twice, out of order or not one of
+    them; a finding that does not start with ids; a Conflict with no Source
+    or Options; and, given `draft_ids`, the ids of the other drafts given to
+    the instructions, an Other drafts finding that starts with another id,
+    which is then left out of `other_drafts`. Raises TypeError when `text` is
+    not text.
     """
-    return _read(text, RECONCILIATION_SECTIONS, "a Reconciliation")
+    read, before = _read(text, RECONCILIATION_SECTIONS, "a Reconciliation")
+    if isinstance(draft_ids, str):
+        raise TypeError("draft_ids is a list of ids")
+    verdict, verdict_problems = _verdict(before, read)
+    named, named_problems = _named_drafts(
+        read, None if draft_ids is None else frozenset(draft_ids))
+    problems = (*verdict_problems, *read.problems, *_conflicts_problems(read), *named_problems)
+    return ReadReconciliation(read.sections, problems, verdict, named)
 
 
 def read_world_review(text):
     """Read what an LLM wrote for a World review into its sections and
-    findings, as `read_reconciliation` does, with WORLD_REVIEW_SECTIONS. State
-    of the World is written as sentences, so a bullet under it need not start
-    with ids. Raises TypeError when `text` is not text.
+    findings, as `read_reconciliation` does, with WORLD_REVIEW_SECTIONS and
+    no verdict. State of the World is written as sentences, so a bullet
+    under it need not start with ids. Raises TypeError when `text` is not
+    text.
     """
-    return _read(text, WORLD_REVIEW_SECTIONS, "a World review")
+    return _read(text, WORLD_REVIEW_SECTIONS, "a World review")[0]
