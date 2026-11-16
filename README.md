@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.10.1"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.11.0"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.10.1"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.11.0"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -93,8 +93,66 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="", flags=())` | The instructions for an Interview, as one text to give an LLM as its system prompt. `kind` is `"new-mod"` or `"revise-mod"`; `surface` is `"cli"` or `"web"`. See [Interviews](#interviews). |
 | `interview_fix_request(errors)` | The message an app sends its LLM, in a `"web"` Interview, when the Mod file the LLM gave has errors: from the app, not the person, who has not seen the file yet, asking for the whole file again in one code block. `errors` is text the caller has already cut down to what the person may read. |
 | `interview_revise_opener()` | The first message an app sends its LLM, on the person's behalf, to open a `"revise-mod"` Interview, so the LLM speaks first, beginning with the send-back reason and each Flag. |
+| `applied(text, field, change, *, previous=None, following=None, event_ordinal)` | An entity's file with an approved Canon Change applied. See [Applying a Canon Change](#applying-a-canon-change). |
+| `unapplied(text, field, change, *, previous=None, following=None, remaining_events=(), event_ordinal)` | An entity's file with an approved Canon Change taken back out. |
 | `avoided_words(text)` | Uses in a text of words the shared glossary says to avoid, each with the term to use instead. For checking docs and prompts. |
 | `schema_files()` | The schema docs and `vocabularies.yml`, as shipped. |
+
+## Applying a Canon Change
+
+An approved Canon Change that moves a field (`status`, `location` or `factions`) is applied to the entity's file, and `load_world` warns when one is approved but not applied. `applied` and `unapplied` make that edit by the same rules, so an app holds none of them:
+
+```python
+change = plotcanon.Change(before="alive", after="dead", event="e03-storm-moon")
+text = plotcanon.applied(npc_text, "status", change,
+                         previous=earlier, following=later,
+                         event_ordinal=ordinals.get)
+```
+
+- **`change`, `previous`, `following`** are `Change(before, after, event, replaced=None)`. `previous` and `following` are the approved changes just before and after this one to the same field of the same entity, in the order they happened, or None. Finding them is the caller's.
+- **`event_ordinal(event_id)`** gives an Event's ordinal, or None if it has none.
+- **A `factions` change** takes `before` out of the list and puts `after` in. Factions changes are decided in the order they happened.
+- **Any other field** goes from `before` to `after`, which must follow on from `previous` and lead into `following`. When `following` is given it already decides the field, and the file comes back as it was.
+- **`as_of`** moves to the change's Event, unless it stands at a later one.
+
+`unapplied` puts the field back where `previous` left it, or to `before`. A factions list goes back to what `replaced` recorded (`{field: value, "as_of": id}`, kept by the caller when it applied the change), or, with nothing recorded, loses `after` and gets `before` back. If `as_of` stands at the change's Event, it goes back to the latest of `replaced["as_of"]` and `remaining_events`, the Events of the entity's other approved changes that move a field; with neither, it stays.
+
+When a change does not fit, both raise `ChangeRefused`. Its `reason` is one of:
+
+| `reason` | Meaning |
+|---|---|
+| `"factions-out-of-order"` | A later factions change (`following`) is already approved. |
+| `"not-a-member"` | The entity is not in the faction `before` names. |
+| `"contradicts-previous"` | `before` is not where `previous` left the field. |
+| `"contradicts-following"` | `after` is not where `following` starts. |
+| `"contradicts-current"` | `before` is not the field's current value. |
+| `"followed-on"` | `unapplied` only: a later approved change (`following`) follows on from this one. |
+
+`neighbor` is `"previous"` or `"following"` when the reason involves that change, which is `other`; `current` is the field's value now. The exception's text is only the reason, so the caller writes the message. A file whose frontmatter cannot be read or changed raises `editing.CannotEdit`.
+
+## Editing a file
+
+`plotcanon.editing` changes one value in a file's text and leaves the rest as it was: comments, quoting, the order of fields, one-line and down-the-page lists, and CRLF line endings. Each function takes the file's whole text and returns the new text. A new value is written in as it stands, so it must already be YAML. Nothing is checked: check the World again with `load_world` before keeping the files.
+
+```python
+from plotcanon import editing
+
+text = editing.replace(text, ["canon_changes", 2, "decision"], "approved")
+text = editing.set_key(text, ["canon_changes", 2], "note", editing.quoted(note), after="decision")
+```
+
+| Function | What it does |
+|---|---|
+| `replace(text, path, new)` | The value at `path`, a list of field names and list positions, replaced. |
+| `find(text, path)` | The YAML node at `path`, and where the frontmatter starts in the text. |
+| `set_field(text, field, new)` | A top-level field set, or added at the end of the frontmatter. |
+| `set_key(text, path, key, new, after)` | A key in the mapping at `path` set, or added just after the key `after`, on one line or down the page as the mapping is written. |
+| `remove_key(text, path, key)` | A key taken out of the mapping at `path`; the file as it was if the key is not there. |
+| `add_to_list(text, field, item)` | An item added to the end of a top-level list, as the list is written. A missing or empty field becomes a list of the one item. |
+| `quoted(words)` | Text written as one double-quoted YAML scalar on one line. |
+| `flow_list(items)` | Ids written as a YAML list on one line. |
+
+Each raises `editing.CannotEdit` when the path is not there or the value cannot be changed; `str()` says which.
 
 ## Dry Runs
 

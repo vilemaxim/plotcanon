@@ -17,6 +17,8 @@ The document types and their fields are described in the files under
 
 from importlib.metadata import version as _version
 
+from . import editing
+from ._changes import Change, ChangeRefused, applied, unapplied
 from ._wording import avoided_words
 from ._interview import interview_fix_request, interview_instructions, interview_revise_opener
 from ._story import Contest, Exit, Passage, Section, Story, story
@@ -46,6 +48,8 @@ from ._api import (
 __version__ = _version("plotcanon")
 
 __all__ = [
+    "Change",
+    "ChangeRefused",
     "Contest",
     "Document",
     "Exit",
@@ -61,8 +65,10 @@ __all__ = [
     "WORLD_SETTINGS_FILE",
     "World",
     "WorldSettings",
+    "applied",
     "avoided_words",
     "check_file",
+    "editing",
     "flagged_mods",
     "flags",
     "from_twine",
@@ -79,6 +85,7 @@ __all__ = [
     "schema_files",
     "story",
     "to_twee",
+    "unapplied",
     "vocabularies",
     "vocabulary_fields",
     "world_settings",
