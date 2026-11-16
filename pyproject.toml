@@ -1,6 +1,6 @@
 [project]
 name = "plotcanon"
-version = "0.9.0"
+version = "0.10.0"
 description = "The shared file format for RPG plot canon: parse and validate a World's markdown files."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
