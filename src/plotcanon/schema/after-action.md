@@ -29,6 +29,7 @@ two payoffs.
 | `event` | ● | event-id | The event this stretch of play happened at. Must be in the mod's `events`. |
 | `ran` | ● | bool | `false` = scheduled but did not happen. Record it anyway; a mod that did not run is information. |
 | `finished` | ● | bool | `true` if the mod has nothing left to play after this stretch; `false` if play stopped with more to come. See below. |
+| `path` | ○ | list | The way this stretch of play went through the mod's Dry Run, ending where play stopped. See below. |
 | `mod_runner` | ● | text | Who ran this stretch of the mod and is reporting on it. |
 | `pcs` | ● | id[] | The PCs who took part. Empty list if `ran: false`. The roster stays authoritative — this is presence at this mod, not a roster edit. |
 | `canon_changes` | ● | list | The changes to canon this report proposes. See below. Empty list is valid. |
@@ -52,6 +53,60 @@ last report on the mod.
   shelved mod is left alone, whatever its reports say.
 - **A mod that did not run is not finished by saying so.** `ran: false` with
   `finished: true` is an error.
+
+## `path`
+
+The **Path**: the way this stretch of play went through the mod's Dry Run
+(the Dry Run convention is in `mod.md`). It runs from the Hook taken, through
+each scene and each Contest's result, to the ending reached or the scene where
+play stopped. **The last step is where play stopped.** A report without one is
+valid; a mod with no Dry Run has nothing to give it.
+
+Each step is one of three things, one per line:
+
+| Step | Written | Names |
+|---|---|---|
+| A Hook | `- hook: <the Hook>` | The Hook taken, as its label is written under `## Hooks`. |
+| A scene or ending | `- <its heading>` | A `###` under `## Scene Breakdown` or `## Possible Outcomes`, matched as a Dry Run link is: a number prefix like `1. ` and case are ignored. |
+| A Contest | `- contest: <what is contested>`<br>`  result: <the result>` | A Contest in the scene before it, and the result taken. |
+
+A step that a Hook or a Contest's result leads to is written as its own step
+after it, so every Path ends at a scene or an ending.
+
+```yaml
+path:
+  - hook: Oleen asks the party directly, through anyone who has done her a favour
+  - The vigil itself
+  - The lower door
+```
+
+Play stopped at the lower door, with more to come, so this report says
+`finished: false`. **A report that continues an earlier stretch** may start
+where the Path of the report before it on the same mod stopped, instead of at
+a Hook:
+
+```yaml
+path:
+  - The lower door
+  - The Order comes through
+  - contest: fight the Order
+    result: win
+  - Order driven off
+```
+
+The validator checks a Path against the mod's Dry Run, when one can be built
+from it:
+
+- **Errors**: a step that names no Hook, scene, ending or Contest the mod has;
+  a step that cannot be reached from the one before it, by a scene's exits, a
+  Hook's link or a Contest's result; a result the Contest does not have; a
+  first step that is neither a Hook nor where the last report's Path stopped;
+  a Path that ends at a Hook or a Contest. The report before is the last one
+  on the same mod that ran, by event and then id. If that report has no Path,
+  where it stopped is not known, and the Path may start at any scene.
+- **Warnings**: a Path that ends at an ending under `## Possible Outcomes` on a
+  report that says `finished: false`, or at a scene on one that says
+  `finished: true`; a Path on a mod with no Dry Run, which cannot be checked.
 
 ## `canon_changes`
 
@@ -144,6 +199,13 @@ mod: the-ashen-vigil
 event: e08-harvest-mourn
 ran: true
 finished: true
+path:
+  - hook: Tomas Veil is owed an answer by Varen and knows he will be there
+  - The vigil itself
+  - The Order comes through
+  - contest: fight the Order
+    result: lose
+  - Register taken
 mod_runner: alex
 pcs: [pc-tomas-veil, pc-sara-korr]
 canon_changes:

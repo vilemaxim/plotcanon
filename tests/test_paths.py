@@ -2,6 +2,7 @@
 as the report's `path`, and checked against the Mod's story by `load_world`
 and `check_file`. The sample World's `the-bell-beneath` is the Mod walked."""
 
+import re
 import unittest
 
 import plotcanon
@@ -341,3 +342,41 @@ class WalkingAPath(unittest.TestCase):
                       [{"contest": "x", "result": ["win"]}], [[["deep"]]]):
             with self.subTest(steps=steps):
                 self.assertFalse(plotcanon.check_path(self.story, steps).ok)
+
+
+class TheSchemaDoc(unittest.TestCase):
+    """`schema/after-action.md` describes `path`, with examples that are Paths
+    through the example Mod in `schema/mod.md`."""
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+
+        mod = plotcanon.schema_files()["mod.md"]
+        start = mod.index("```markdown\n") + len("```markdown\n")
+        cls.story = plotcanon.story(mod[start:mod.rindex("```")])
+        cls.doc = plotcanon.schema_files()["after-action.md"]
+        blocks = re.findall(r"```(?:yaml|markdown)\n(.*?)```", cls.doc, re.S)
+        cls.paths = [yaml.safe_load(b.split("---")[1] if b.startswith("---") else b)["path"]
+                     for b in blocks if re.search(r"^path:", b, re.M)]
+
+    def test_it_describes_the_field(self):
+        self.assertIn("| `path` | ○ |", self.doc)
+        self.assertIn("## `path`", self.doc)
+
+    def test_its_examples_are_paths_through_the_example_mod(self):
+        self.assertGreaterEqual(len(self.paths), 3)
+        stopped = None
+        for steps in self.paths:
+            with self.subTest(steps=steps):
+                walked = plotcanon.check_path(self.story, steps, continues_from=stopped)
+
+                self.assertEqual(walked.problems, ())
+                stopped = walked.end.name
+
+    def test_its_examples_show_a_contest_and_a_stretch_that_continues_another(self):
+        steps = [s for p in self.paths for s in p]
+
+        self.assertTrue(any(isinstance(s, dict) and "contest" in s for s in steps))
+        self.assertTrue(any(isinstance(p[0], str) for p in self.paths))
+        self.assertTrue(any(isinstance(p[0], dict) and "hook" in p[0] for p in self.paths))
