@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.12.0"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.13.0"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.12.0"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.13.0"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -82,6 +82,7 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `references(document)` | The values in a document that name other documents, each a `Reference` with its field, the id and its place. A value in any other field (a Mod Writer's handle, a date) is never one. |
 | `referrers(world, document)` | The documents in a World that refer to a document (or an id). |
 | `name_of(world, document)` | What to call a document on a page: its title, its first alias, or for a report its Mod and Event. |
+| `without_gm_notes(text)` | A document's whole text without its `## GM Notes`, the secret section, for anyone outside the plot team: the heading and everything under it, up to the next heading of the same or a higher level. The heading is matched on its exact text, and one in a code block is not a heading. Everything else, frontmatter and line endings included, is left as it was. |
 | `vocabulary_fields(document)` | Which of a document's fields hold a value from a vocabulary, and which vocabulary. |
 | `story(mod)` | A Mod's story by the Dry Run convention, as a `Story`: its start, passages, exits, Contests and endings, and why a Dry Run cannot be built from it, if it cannot. Takes a Mod's `Document` or its text. |
 | `path_steps(story, choices, *, continues_from=None, start=None)` | The steps of a Path, as a report's `path` holds them, from the choices taken in a walk through a Dry Run. See [Paths](#paths). |
