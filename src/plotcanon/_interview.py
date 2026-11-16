@@ -434,12 +434,7 @@ fix what it reports and give me the whole file again.
 }
 
 
-CHECKLIST = """\
-## The checklist
-
-These are the questions phase 3 runs. If the Mod fails one, tell me plainly
-and suggest a fix rather than writing around it.
-
+AGENCY_QUESTIONS = """\
 1. Can the players fail, and is failure interesting? One outcome is a cutscene.
 2. Is there more than one way in? Two or three hooks, not one.
 3. Does the outcome turn on player choices, or is it decided in the writeup?
@@ -452,7 +447,16 @@ and suggest a fix rather than writing around it.
    play? Flag this every time: it is the one that does lasting damage.
 9. Is any NPC unbeatable by fiat? If so, can players tell before they commit?
 10. Does it need a content brief or an opt-out?
+"""
 
+
+CHECKLIST = """\
+## The checklist
+
+These are the questions phase 3 runs. If the Mod fails one, tell me plainly
+and suggest a fix rather than writing around it.
+
+""" + AGENCY_QUESTIONS + """
 ## Things that will get the Mod sent back
 
 - Killing, maiming, or permanently changing an existing character, NPC or PC,
