@@ -100,7 +100,8 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `interview_report_opener(path=None)` | The same for a `"report"` Interview: it begins with the Path, or with no Path asks the Mod Runner to say in words what happened and where play stopped. |
 | `reconciliation_instructions(surface, *, draft=None, world=None, other_drafts=None, findings=None)` | The instructions for a Reconciliation of a draft Mod, as one system prompt. See [Reconciliation and World review](#reconciliation-and-world-review). |
 | `world_review_instructions(surface, *, world=None, findings=None)` | The instructions for a World review, as one system prompt. |
-| `read_reconciliation(text)`, `read_world_review(text)` | What the LLM wrote, read into sections and findings, as a `ReadReport`. |
+| `read_reconciliation(text, *, draft_ids=None)` | What the LLM wrote for a Reconciliation, read into its verdict, sections, findings and the other drafts it names, as a `ReadReconciliation`. |
+| `read_world_review(text)` | The same for a World review, as a `ReadReport`. |
 | `applied(text, field, change, *, previous=None, following=None, event_ordinal)` | An entity's file with an approved Canon Change applied. See [Applying a Canon Change](#applying-a-canon-change). |
 | `unapplied(text, field, change, *, previous=None, following=None, remaining_events=(), event_ordinal)` | An entity's file with an approved Canon Change taken back out. |
 | `avoided_words(text)` | Uses in a text of words the shared glossary says to avoid, each with the term to use instead. For checking docs and prompts. |
@@ -309,16 +310,20 @@ text = plotcanon.reconciliation_instructions(
 )
 text = plotcanon.world_review_instructions("web", world=readable, findings=report.findings)
 
-read = plotcanon.read_reconciliation(llm_output)    # or read_world_review
-read.problems                                       # () when it kept to the shape
-for finding in read.section("Other drafts").findings:
-    finding.ids[0]                                  # the other draft's id
+read = plotcanon.read_reconciliation(llm_output, draft_ids=["the-captains-last-order"])
+read.verdict           # "clean", "clean with warnings" or "conflicts, do not approve yet"
+read.other_drafts      # ("the-captains-last-order",): the other drafts it names
+read.problems          # () when it kept to the shape
+read.section("Conflicts").findings[0].ids
+
+review = plotcanon.read_world_review(llm_output)    # sections and problems, no verdict
 ```
 
 A Reconciliation judges each status as of the Mod's earliest Event, since a status is a claim about a point in time. It does not rewrite the Mod, choose a side, invent Canon, or repeat the check findings it is given.
 
+- **The drafts are given once.** The plot team's World holds `inbox/`, so the draft and the other drafts are in it too. The instructions leave every document whose `id` is the draft's or another draft's out of the World as given, and give each only in its own section, as passed in. The LLM is told an entity exists only if a document in the World has it, so what a draft proposes is never reported as already existing. A draft in `inbox/` that is not passed as `draft` or in `other_drafts` stays in the World.
 - **`surface`**: `"web"` needs the draft and the World given. On `"cli"`, for larp-llm, any of `draft`, `world`, `other_drafts` and `findings` may be left out (None): the LLM then reads the World from the files, the draft named in the request and the other drafts from `inbox/`, and runs `plotcanon validate` itself. `[]` means there are none.
-- **The output shape.** The report is the `##` headings of `RECONCILIATION_SECTIONS` (Conflicts, Warnings, Missing links, Slug mapping, New entities, Player agency, Other drafts, Proposed changes) or `WORLD_REVIEW_SECTIONS` (State of the World, Drift, Watch list, Weaving, Coverage), every one written, in that order, and no others. Under each, a finding is a bullet at the start of a line that starts with the ids it is about, in backticks, then a colon:
+- **The output shape.** A Reconciliation starts with a line `Verdict: ` and one of `RECONCILIATION_VERDICTS`: `conflicts, do not approve yet` when Conflicts has a finding, `clean with warnings` when another section has, `clean` when none has. Then the report is the `##` headings of `RECONCILIATION_SECTIONS` (Conflicts, Warnings, Missing links, Slug mapping, New entities, Player agency, Other drafts, Proposed changes) or `WORLD_REVIEW_SECTIONS` (State of the World, Drift, Watch list, Weaving, Coverage), every one written, in that order, and no others. Under each, a finding is a bullet at the start of a line that starts with the ids it is about, in backticks, then a colon:
 
   ```markdown
   ## Slug mapping
@@ -327,8 +332,19 @@ A Reconciliation judges each status as of the Mod's earliest Event, since a stat
   - `sister-oleen`: NEW. Nothing in the World is called "Sister Oleen".
   ```
 
-  Lines under a bullet, indented by two spaces, belong to it, code blocks included. `None.` means a section has no findings. Under Slug mapping each bullet starts with the Mod Writer's guessed id alone, then the real id, `NEW` or `AMBIGUOUS` and the candidates. Under Other drafts each starts with the other draft's id. State of the World is written as sentences, not bullets.
-- **Reading it.** `ReadReport.sections` holds each `ReportSection` (`heading`, `text`, `findings`) in the order written, and `section(heading)` finds one, or None. Each `ReportFinding` has its `ids` and its `text`. `problems` names where the text strays from the shape: a heading missing, written twice, out of order or not one of them, or a finding without ids. Sections headed as asked are read even when there are problems elsewhere.
+  Lines under a bullet, indented by two spaces, belong to it, code blocks included. `None.` means a section has no findings. Under Slug mapping each bullet starts with the Mod Writer's guessed id alone, then the real id, `NEW` or `AMBIGUOUS` and the candidates. Each Conflict has a `Source:` line (the file and field that hold what Canon says) and an `Options:` line (the ways out). Under Other drafts each starts with the other draft's id. In a World review, State of the World is written as sentences, not bullets, and every other finding has a `Files:` line naming the files that show it:
+
+  ```markdown
+  Verdict: conflicts, do not approve yet
+
+  ## Conflicts
+
+  - `ysolde-marr`, `the-salt-ledger`: the Mod has her give an order at the
+    third Event, but she is `final-death` as of the second.
+    Source: `canon/npcs/ysolde-marr.md`: `status`
+    Options: a flashback; another captain gives the order.
+  ```
+- **Reading it.** `ReadReconciliation` is a `ReadReport` with `verdict` (None when there is none, or it is not one of the verdicts) and `other_drafts`, the first id of each Other drafts finding, once each. `ReadReport.sections` holds each `ReportSection` (`heading`, `text`, `findings`) in the order written, and `section(heading)` finds one, or None. Each `ReportFinding` has its `ids` and its `text`. `problems` names where the text strays from the shape: a heading missing, written twice, out of order or not one of them, or a finding without ids; for a Reconciliation also no verdict, an unknown one, or one the findings do not bear out (checked only when the headings are as asked), and a Conflict with no `Source:` or `Options:`. Given `draft_ids`, the ids of the other drafts passed to the instructions, an Other drafts finding that starts with any other id is a problem and is left out of `other_drafts`, so an app need not trust the order of ids. Sections headed as asked are read even when there are problems elsewhere.
 
 An unknown `surface`, a `"web"` call with no draft or no World, and a draft or other draft with no `id` raise `ValueError`. A draft that is not text, or `other_drafts` or `findings` given as one text, raise `TypeError`, as does reading anything but text. The text keeps to the shared glossary.
 
