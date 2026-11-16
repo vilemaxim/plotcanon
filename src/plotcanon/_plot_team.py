@@ -305,6 +305,143 @@ def reconciliation_instructions(surface, *, draft=None, world=None, other_drafts
     return "\n".join(parts)
 
 
+WORLD_REVIEW_OPENING = """\
+You take the long view of a LARP's World, across all its Campaigns, and report
+to the plot team. Everything else checks one document at a time; you are the
+only pass that looks at the whole World. You report; the Plot Master decides.
+
+Do not repeat what a Reconciliation does, which checks one draft Mod against
+Canon at one moment. Look for what no check of a single document can see.
+"""
+
+
+WORLD_REVIEW_CLOCK = """\
+## The clock
+
+Put the Events in order by `ordinal`, and mark which have run (`complete`),
+which are to come (`planned`), and which were `cancelled`. Interludes sit
+between Events in the same order. A status is a claim about a point in time:
+read every `status` together with its `as_of`.
+"""
+
+
+WORLD_REVIEW_CHECKS = """\
+## What drift looks like
+
+**Slow contradictions.** Compare Canon against itself over time: an NPC in two
+places at one Event; a faction `active` while every Mod for four Events has
+treated it as broken; a location `controlled_by` a faction that disbanded two
+Events ago.
+
+**Plots that lost their way.** A Plot marked `open` whose last Mod was six
+Events ago is not open but dormant, and misleads a Mod Writer looking for
+something to pick up. A `dormant` Plot that three recent Mods have moved on is
+open, and nobody said so.
+
+**Undecided and unapplied history.** Canon Changes still at `decision:
+proposed` long after their Event, and entities whose `as_of` is far behind the
+latest Event that ran. Canon that lags play by two Events makes every
+Reconciliation after it wrong. Report the worst first, by how far behind they
+are.
+
+**What was written against what was played.** Read the `## Divergences From
+The Mod` sections of recent After-Action Reports together. One divergence is
+one night's play. The same divergence three times is a pattern: an NPC nobody
+plays as written, a Plot the players keep turning down, a faction that reads
+as villains when it should not. This is the most useful thing in the report,
+and the only place it can be seen.
+
+## What to weave
+
+Find chances to connect what is already being written. **Do not disturb what
+Mod Writers are already writing.** A good suggestion adds to what exists: an
+NPC who could be in a Mod already written, a Plot two Mods could both touch, a
+consequence from one Event that would land well in a Mod already planned for a
+later one. A bad suggestion asks a Mod Writer to change their premise.
+
+Look first for:
+
+- **Recurring NPCs with nothing planned.** Known to players, and idle. The
+  cheapest story there is.
+- **Dormant Plots with a live hook.** Read each Plot's `## Where It Could Go`:
+  Mod Writers wrote it for this.
+- **Loose ends.** The `## Loose Ends` of After-Action Reports are hooks play
+  made and nobody took up. Check them against what is planned.
+- **Consequences nobody used.** Something Canon says happened that no Mod has
+  answered yet.
+
+For each, say what to connect, which document it attaches to, why it fits,
+and how much it disturbs: none, a small addition, or needs the Mod Writer to
+agree. Put the least disturbing first.
+
+## What coverage means
+
+Which NPCs, factions and locations carry everything, and which have not
+appeared in ten Events. Which Mod Writers are all writing into the same corner
+of the World. Which Event to come has nothing planned.
+
+## How to judge
+
+- **Be specific or say nothing.** "Consider deepening the factions" is noise.
+  "The Order has been in six Mods and no PC has met anyone above its captain;
+  a scene in a Mod already planned could change that" is a suggestion.
+- **Do not invent Canon.** Everything you suggest must attach to something
+  that exists, named by its id.
+- **Say when the World is fine.** A short report is allowed, and believed
+  more than a long one padded to look thorough.
+- **Rank hard.** Five findings the plot team acts on beat thirty they skim.
+  Put the worst drift first.
+"""
+
+
+WORLD_REVIEW_SECTION_NOTES = """\
+Under State of the World, write three or four sentences, not bullets: the
+Events run, the Mods finished, the Plots open, and where things stand. Under
+Drift, what needs the plot team now, worst first. Under Watch list, what is
+not wrong yet but is heading that way. Under Weaving, the suggestions, least
+disturbing first. Under Coverage, what is used too much and too little, and
+the Events to come with nothing planned.
+"""
+
+
+def world_review_instructions(surface, *, world=None, findings=None):
+    """The instructions for a World review, as one text to give an LLM as
+    its system prompt: it looks across the whole World for drift, Plots that
+    lost their way, undecided and unapplied history, and chances to bring
+    back recurring NPCs and dormant Plots, and writes one report for the plot
+    team, in the shape `read_world_review` reads.
+
+    `surface` is "web", for the app's own LLM, or "cli", for larp-llm or for
+    pasting into an LLM by hand. `world` is the whole World as the plot team
+    reads it, in any form `load_world` takes. `findings` is what plotcanon's
+    checks found on the World, each a `Finding` or a line of text, so the LLM
+    does not repeat them; empty when there are none.
+
+    On "web" the World is needed. On "cli" either may be left out: the LLM
+    then reads the World from the files and runs the checks itself.
+
+    Raises ValueError for an unknown surface or a "web" call with no World.
+    Raises TypeError for findings given as one text rather than a list.
+    """
+    _surface(surface, "a World review")
+    parts = [
+        WORLD_REVIEW_OPENING,
+        ONE_REPORT,
+        WORLD_REVIEW_CLOCK,
+        WORLD_REVIEW_CHECKS,
+        _shape(WORLD_REVIEW_SECTIONS, ("feud-of-vale-and-marr",),
+               "marked `open`, but no Mod has touched it in five Events.",
+               prose="State of the World is the one section written as "
+               "sentences rather than bullets. "),
+        WORLD_REVIEW_SECTION_NOTES,
+        _check_findings(findings, surface),
+        _world(world, surface, "a World review"),
+        "## Start here\n\nWrite the report now, in the shape above, and nothing "
+        "else.\n",
+    ]
+    return "\n".join(parts)
+
+
 @dataclass(frozen=True)
 class ReportFinding:
     """One finding in a Reconciliation or a World review: the `ids` it starts
@@ -431,3 +568,12 @@ def read_reconciliation(text):
     Raises TypeError when `text` is not text.
     """
     return _read(text, RECONCILIATION_SECTIONS, "a Reconciliation")
+
+
+def read_world_review(text):
+    """Read what an LLM wrote for a World review into its sections and
+    findings, as `read_reconciliation` does, with WORLD_REVIEW_SECTIONS. State
+    of the World is written as sentences, so a bullet under it need not start
+    with ids. Raises TypeError when `text` is not text.
+    """
+    return _read(text, WORLD_REVIEW_SECTIONS, "a World review")

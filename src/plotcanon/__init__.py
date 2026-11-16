@@ -31,8 +31,11 @@ from ._plot_team import (
     ReadReport,
     ReportFinding,
     ReportSection,
+    WORLD_REVIEW_SECTIONS,
     read_reconciliation,
+    read_world_review,
     reconciliation_instructions,
+    world_review_instructions,
 )
 from ._story import Contest, Exit, Passage, Section, Story, story
 from ._path import LastStop, Path, check_path, path_steps
@@ -85,6 +88,7 @@ __all__ = [
     "Story",
     "WORLD_SETTINGS_FILE",
     "World",
+    "WORLD_REVIEW_SECTIONS",
     "WorldSettings",
     "applied",
     "avoided_words",
@@ -104,6 +108,7 @@ __all__ = [
     "path_steps",
     "read_directory",
     "read_reconciliation",
+    "read_world_review",
     "reconciliation_instructions",
     "references",
     "referrers",
@@ -115,6 +120,7 @@ __all__ = [
     "unapplied",
     "vocabularies",
     "vocabulary_fields",
+    "world_review_instructions",
     "world_settings",
     "__version__",
 ]
