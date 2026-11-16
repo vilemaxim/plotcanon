@@ -97,6 +97,9 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `interview_fix_request(errors)` | The message an app sends its LLM, in a `"web"` Interview, when the Mod file the LLM gave has errors: from the app, not the person, who has not seen the file yet, asking for the whole file again in one code block. `errors` is text the caller has already cut down to what the person may read. |
 | `interview_revise_opener()` | The first message an app sends its LLM, on the person's behalf, to open a `"revise-mod"` Interview, so the LLM speaks first, beginning with the send-back reason and each Flag. |
 | `interview_report_opener(path=None)` | The same for a `"report"` Interview: it begins with the Path, or with no Path asks the Mod Runner to say in words what happened and where play stopped. |
+| `reconciliation_instructions(surface, *, draft=None, world=None, other_drafts=None, findings=None)` | The instructions for a Reconciliation of a draft Mod, as one system prompt. See [Reconciliation and World review](#reconciliation-and-world-review). |
+| `world_review_instructions(surface, *, world=None, findings=None)` | The instructions for a World review, as one system prompt. |
+| `read_reconciliation(text)`, `read_world_review(text)` | What the LLM wrote, read into sections and findings, as a `ReadReport`. |
 | `applied(text, field, change, *, previous=None, following=None, event_ordinal)` | An entity's file with an approved Canon Change applied. See [Applying a Canon Change](#applying-a-canon-change). |
 | `unapplied(text, field, change, *, previous=None, following=None, remaining_events=(), event_ordinal)` | An entity's file with an approved Canon Change taken back out. |
 | `avoided_words(text)` | Uses in a text of words the shared glossary says to avoid, each with the term to use instead. For checking docs and prompts. |
@@ -290,6 +293,43 @@ fix = plotcanon.interview_fix_request(errors_text)   # when the file the LLM gav
 An unknown `kind` or `surface`, a `"revise-mod"` with no draft or a draft with no `id`, a `"report"` with no Mod, a Mod with no `id` or a Path that does not fit the Mod's Dry Run, and a kind given a parameter that only another kind takes (a draft, send-back reason or Flags; a Mod, Path, `continues_from` or `event`) raise `ValueError`. A draft, Mod or `event` that is not text, and a `continues_from` that is not a `LastStop`, a scene's name or None, raise `TypeError`. The text keeps to the shared glossary (`avoided_words` finds nothing in it), though what a World or a draft holds is passed through as written. So do the fix request and the opener, though the errors are passed through as written.
 
 `plotcanon instructions --write FILE` writes the `"cli"` instructions for a new Mod, with no World, for larp-llm to copy in.
+
+## Reconciliation and World review
+
+A Reconciliation checks one draft Mod against the World's Canon and against the other drafts waiting for approval, for a Plot Master to read before approving it or sending it back. A World review looks across the whole World for drift, Plots that lost their way, undecided and unapplied history, and chances to bring back recurring NPCs and dormant Plots, for the plot team. Each is one report, not a conversation, so neither is an Interview. The text began as larp-llm's `reconciler` and `world-review` agents.
+
+```python
+text = plotcanon.reconciliation_instructions(
+    "web",
+    draft=draft_text,                 # must have an `id`
+    world=readable,                   # the World as the plot team reads it
+    other_drafts=[other_text, ...],   # every other draft waiting for approval; [] for none
+    findings=report.findings,         # plotcanon's check findings on the draft, Findings or text
+)
+text = plotcanon.world_review_instructions("web", world=readable, findings=report.findings)
+
+read = plotcanon.read_reconciliation(llm_output)    # or read_world_review
+read.problems                                       # () when it kept to the shape
+for finding in read.section("Other drafts").findings:
+    finding.ids[0]                                  # the other draft's id
+```
+
+A Reconciliation judges each status as of the Mod's earliest Event, since a status is a claim about a point in time. It does not rewrite the Mod, choose a side, invent Canon, or repeat the check findings it is given.
+
+- **`surface`**: `"web"` needs the draft and the World given. On `"cli"`, for larp-llm, any of `draft`, `world`, `other_drafts` and `findings` may be left out (None): the LLM then reads the World from the files, the draft named in the request and the other drafts from `inbox/`, and runs `plotcanon validate` itself. `[]` means there are none.
+- **The output shape.** The report is the `##` headings of `RECONCILIATION_SECTIONS` (Conflicts, Warnings, Missing links, Slug mapping, New entities, Player agency, Other drafts, Proposed changes) or `WORLD_REVIEW_SECTIONS` (State of the World, Drift, Watch list, Weaving, Coverage), every one written, in that order, and no others. Under each, a finding is a bullet at the start of a line that starts with the ids it is about, in backticks, then a colon:
+
+  ```markdown
+  ## Slug mapping
+
+  - `harbour-clerk`: is `clerk-pell`, by its alias "the harbour clerk".
+  - `sister-oleen`: NEW. Nothing in the World is called "Sister Oleen".
+  ```
+
+  Lines under a bullet, indented by two spaces, belong to it, code blocks included. `None.` means a section has no findings. Under Slug mapping each bullet starts with the Mod Writer's guessed id alone, then the real id, `NEW` or `AMBIGUOUS` and the candidates. Under Other drafts each starts with the other draft's id. State of the World is written as sentences, not bullets.
+- **Reading it.** `ReadReport.sections` holds each `ReportSection` (`heading`, `text`, `findings`) in the order written, and `section(heading)` finds one, or None. Each `ReportFinding` has its `ids` and its `text`. `problems` names where the text strays from the shape: a heading missing, written twice, out of order or not one of them, or a finding without ids. Sections headed as asked are read even when there are problems elsewhere.
+
+An unknown `surface`, a `"web"` call with no draft or no World, and a draft or other draft with no `id` raise `ValueError`. A draft that is not text, or `other_drafts` or `findings` given as one text, raise `TypeError`, as does reading anything but text. The text keeps to the shared glossary.
 
 ## Use it from the command line
 
