@@ -205,3 +205,58 @@ class Wording(unittest.TestCase):
             for name, text in every_output(world):
                 with self.subTest(name, world=world is not None):
                     self.assertEqual(plotcanon.avoided_words(text), [])
+
+
+ERRORS = "inbox/the-salt-ledger.md: `type` is `nonsense`, not one of the document types."
+
+
+class FixRequest(unittest.TestCase):
+    def test_it_gives_the_errors_and_says_it_comes_from_the_app(self):
+        text = plotcanon.interview_fix_request(ERRORS)
+        flat = " ".join(text.split())
+
+        self.assertIn(ERRORS, text)
+        self.assertIn("This message is from the app, not the person", flat)
+
+    def test_it_says_the_person_has_not_seen_the_file(self):
+        flat = " ".join(plotcanon.interview_fix_request(ERRORS).split())
+
+        self.assertIn("The person has not seen the file yet", flat)
+
+    def test_it_asks_for_the_whole_file_again_in_one_code_block_as_the_web_instructions_do(self):
+        flat = " ".join(plotcanon.interview_fix_request(ERRORS).split())
+        web = " ".join(instructions("new-mod", "web").split())
+
+        asked = "the whole of it, from the opening `---` to the last section, in a single markdown code block"
+        self.assertIn(asked, web)
+        self.assertIn("give the whole file again: from the opening `---` to the last section, "
+                      "in a single markdown code block", flat)
+
+    def test_empty_errors_are_refused(self):
+        for errors in ("", "  \n"):
+            with self.subTest(errors=errors), self.assertRaises(ValueError):
+                plotcanon.interview_fix_request(errors)
+
+    def test_it_keeps_to_the_glossary(self):
+        self.assertEqual(plotcanon.avoided_words(plotcanon.interview_fix_request(ERRORS)), [])
+
+
+class ReviseOpener(unittest.TestCase):
+    def test_it_asks_the_llm_to_begin_with_the_reason_and_the_flags(self):
+        flat = " ".join(plotcanon.interview_revise_opener().split())
+
+        self.assertIn("why the Plot Master sent the draft back", flat)
+        self.assertIn("each Flag on it", flat)
+        self.assertIn("say so and ask me what I want to change", flat)
+
+    def test_it_asks_for_what_the_revise_instructions_say_to_start_with(self):
+        flat = " ".join(plotcanon.interview_revise_opener().split())
+        told = " ".join(revising().split())
+
+        for phrase in ("why the Plot Master sent the draft back", "each Flag on it"):
+            with self.subTest(phrase):
+                self.assertIn(phrase, flat)
+                self.assertIn(phrase, told)
+
+    def test_it_keeps_to_the_glossary(self):
+        self.assertEqual(plotcanon.avoided_words(plotcanon.interview_revise_opener()), [])

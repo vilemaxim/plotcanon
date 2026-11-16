@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.10.0"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.10.1"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.10.0"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.10.1"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
@@ -91,6 +91,8 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
 | `vocabularies()` | The allowed values for every enum field. |
 | `interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="", flags=())` | The instructions for an Interview, as one text to give an LLM as its system prompt. `kind` is `"new-mod"` or `"revise-mod"`; `surface` is `"cli"` or `"web"`. See [Interviews](#interviews). |
+| `interview_fix_request(errors)` | The message an app sends its LLM, in a `"web"` Interview, when the Mod file the LLM gave has errors: from the app, not the person, who has not seen the file yet, asking for the whole file again in one code block. `errors` is text the caller has already cut down to what the person may read. |
+| `interview_revise_opener()` | The first message an app sends its LLM, on the person's behalf, to open a `"revise-mod"` Interview, so the LLM speaks first, beginning with the send-back reason and each Flag. |
 | `avoided_words(text)` | Uses in a text of words the shared glossary says to avoid, each with the term to use instead. For checking docs and prompts. |
 | `schema_files()` | The schema docs and `vocabularies.yml`, as shipped. |
 
@@ -171,7 +173,16 @@ text = plotcanon.interview_instructions(
 - **`world`**: what the person may read in the World, in any form `load_world` takes. The caller decides what that is. The text holds those documents and their slugs, and nothing else from any World. With a World, the LLM uses its slugs and lists only what is truly new under `## Proposed New Entities`. With none, every Feature gets a made-up slug and is listed there.
 - **`"revise-mod"`** starts the conversation with the send-back reason and each Flag, and keeps the draft's `id`.
 
-An unknown `kind` or `surface`, a `"revise-mod"` with no draft or a draft with no `id`, and a `"new-mod"` given a draft raise `ValueError`. The text keeps to the shared glossary (`avoided_words` finds nothing in it), though what a World or a draft holds is passed through as written.
+Two more texts go with a `"web"` Interview, so an app holds no prompt text of its own:
+
+```python
+first = plotcanon.interview_revise_opener()          # sent on the person's behalf, so the LLM speaks first
+fix = plotcanon.interview_fix_request(errors_text)   # when the file the LLM gave has errors
+```
+
+`interview_fix_request` tells the LLM the message is from the app, that the person has not seen the file yet, and to fix the errors and give the whole file again in one code block. Empty errors raise `ValueError`.
+
+An unknown `kind` or `surface`, a `"revise-mod"` with no draft or a draft with no `id`, and a `"new-mod"` given a draft raise `ValueError`. The text keeps to the shared glossary (`avoided_words` finds nothing in it), though what a World or a draft holds is passed through as written. So do the fix request and the opener, though the errors are passed through as written.
 
 `plotcanon instructions --write FILE` writes the `"cli"` instructions for a new Mod, with no World, for larp-llm to copy in.
 

@@ -628,3 +628,45 @@ def _draft_section(draft, reason, flags):
         "### The draft as it stands\n\n" + _fenced(draft, "markdown"),
     ]
     return "\n".join(parts)
+
+
+FIX_REQUEST = """\
+This message is from the app, not the person. The app checked the Mod file you
+gave and cannot take it in as it is:
+
+{errors}
+
+The person has not seen the file yet, so do not ask them about these errors.
+Fix them, then give the whole file again: from the opening `---` to the last
+section, in a single markdown code block, and nothing else in that block, as
+your instructions ask.
+"""
+
+
+def interview_fix_request(errors):
+    """The message an app sends its LLM, in a "web" Interview, when the Mod
+    file the LLM gave has errors, before the person sees the file.
+
+    `errors` is the errors as text, already cut down by the caller to what the
+    person may read. Raises ValueError when there are none.
+    """
+    if not isinstance(errors, str):
+        raise TypeError("the errors are text")
+    if not errors.strip():
+        raise ValueError("a fix request needs the errors to fix")
+    return FIX_REQUEST.format(errors=errors.strip())
+
+
+REVISE_OPENER = """\
+Let's begin. Go through why the Plot Master sent the draft back, and then each
+Flag on it, one at a time, as your instructions say. If there is no reason and
+there are no open Flags, say so and ask me what I want to change.
+"""
+
+
+def interview_revise_opener():
+    """The first message an app sends its LLM, on the person's behalf, to open
+    a "revise-mod" Interview, so the LLM speaks first: it begins with the
+    send-back reason and each Flag that `interview_instructions` gave it.
+    """
+    return REVISE_OPENER

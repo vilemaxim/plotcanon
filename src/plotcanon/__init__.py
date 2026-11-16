@@ -18,7 +18,7 @@ The document types and their fields are described in the files under
 from importlib.metadata import version as _version
 
 from ._wording import avoided_words
-from ._interview import interview_instructions
+from ._interview import interview_fix_request, interview_instructions, interview_revise_opener
 from ._story import Contest, Exit, Passage, Section, Story, story
 from ._twine import FromTwine, from_twine, to_twee
 from ._references import Reference, name_of, references, referrers, vocabulary_fields
@@ -66,7 +66,9 @@ __all__ = [
     "flagged_mods",
     "flags",
     "from_twine",
+    "interview_fix_request",
     "interview_instructions",
+    "interview_revise_opener",
     "load_world",
     "name_of",
     "read_directory",
