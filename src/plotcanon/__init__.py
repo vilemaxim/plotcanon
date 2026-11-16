@@ -20,6 +20,7 @@ from importlib.metadata import version as _version
 from . import editing
 from ._changes import Change, ChangeRefused, applied, unapplied
 from ._wording import avoided_words
+from ._gm_notes import without_gm_notes
 from ._interview import (
     interview_fix_request,
     interview_instructions,
@@ -101,6 +102,7 @@ __all__ = [
     "unapplied",
     "vocabularies",
     "vocabulary_fields",
+    "without_gm_notes",
     "world_settings",
     "__version__",
 ]
