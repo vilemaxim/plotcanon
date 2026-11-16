@@ -254,5 +254,31 @@ class Schema(CommandTest):
         self.assertTrue((self.root / "schema/after-action.md").exists())
 
 
+class Instructions(CommandTest):
+    def test_write_saves_the_instructions_for_a_new_mod_on_the_command_line(self):
+        import plotcanon
+
+        result = self.plotcanon("instructions", "--write", "prompts/mod-writer.md")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual((self.root / "prompts/mod-writer.md").read_text(encoding="utf-8"),
+                         plotcanon.interview_instructions("new-mod", "cli"))
+
+    def test_write_is_relative_to_the_root(self):
+        result = self.plotcanon("instructions", "--write", "mod-writer.md",
+                                "--root", str(self.root), cwd=Path(tempfile.mkdtemp()))
+
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue((self.root / "mod-writer.md").exists())
+
+    def test_without_write_they_are_printed(self):
+        import plotcanon
+
+        result = self.plotcanon("instructions")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, plotcanon.interview_instructions("new-mod", "cli"))
+
+
 if __name__ == "__main__":
     unittest.main()

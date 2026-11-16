@@ -90,6 +90,7 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `sample_world()` | A ready-made World, as `{path: text}`. |
 | `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
 | `vocabularies()` | The allowed values for every enum field. |
+| `interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="", flags=())` | The instructions for an Interview, as one text to give an LLM as its system prompt. `kind` is `"new-mod"` or `"revise-mod"`; `surface` is `"cli"` or `"web"`. See [Interviews](#interviews). |
 | `avoided_words(text)` | Uses in a text of words the shared glossary says to avoid, each with the term to use instead. For checking docs and prompts. |
 | `schema_files()` | The schema docs and `vocabularies.yml`, as shipped. |
 
@@ -151,6 +152,29 @@ Twine variables, macros, HTML and styling are kept as text, with a warning that 
 
 `from_twine` is safe to hand an upload. It reports what is wrong and does not raise. It refuses a file over 5,000,000 characters, a story of more than 1,000 passages, a file holding more than one story, and one that would come to more markdown than a Mod file may hold.
 
+## Interviews
+
+An Interview is a conversation in which an LLM helps a Mod Writer write a Mod, or revise one the Plot Master sent back. plotcanon owns what the LLM is told: the frontmatter, the nine body headings, the Dry Run convention with the checks `story` makes, the phases of the work, the agency checklist and what gets a Mod sent back.
+
+```python
+text = plotcanon.interview_instructions("new-mod", "web", world=readable)
+
+text = plotcanon.interview_instructions(
+    "revise-mod", "web", world=readable,
+    draft=draft_text,                                   # must have an `id`, which is kept
+    sent_back_reason="It needs a second way in.",       # may be ""
+    flags=[("harbour-clerk", "The clerk was arrested at the last Event.")],
+)
+```
+
+- **`surface`**: `"cli"` is for pasting into an LLM by hand or using with Claude Code. `"web"` is for an app's own LLM, which is told to give the finished file whole, in one code block, so the app can check it.
+- **`world`**: what the person may read in the World, in any form `load_world` takes. The caller decides what that is. The text holds those documents and their slugs, and nothing else from any World. With a World, the LLM uses its slugs and lists only what is truly new under `## Proposed New Entities`. With none, every Feature gets a made-up slug and is listed there.
+- **`"revise-mod"`** starts the conversation with the send-back reason and each Flag, and keeps the draft's `id`.
+
+An unknown `kind` or `surface`, a `"revise-mod"` with no draft or a draft with no `id`, and a `"new-mod"` given a draft raise `ValueError`. The text keeps to the shared glossary (`avoided_words` finds nothing in it), though what a World or a draft holds is passed through as written.
+
+`plotcanon instructions --write FILE` writes the `"cli"` instructions for a new Mod, with no World, for larp-llm to copy in.
+
 ## Use it from the command line
 
 ```sh
@@ -161,6 +185,7 @@ plotcanon pov varen-ashcroft         # everything canon records about one entity
 plotcanon schema --write schema/     # copy the schema docs into a World
 plotcanon sample --write demo/       # copy the sample World to disk
 plotcanon words README.md docs/      # check wording against the shared glossary
+plotcanon instructions --write prompts/mod-writer.md   # the Interview instructions for a new Mod
 ```
 
 Add `--root DIR` to work on a World somewhere else. `validate` exits 0 when the World is clean, 1 when it has errors (or warnings, with `--strict`), and 2 when the command could not run.

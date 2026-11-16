@@ -8,6 +8,8 @@
     plotcanon schema --write schema/    # copy the schema docs into a World
     plotcanon sample --write demo/      # copy the sample World to disk
     plotcanon words README.md docs/     # check wording against the glossary
+    plotcanon instructions --write prompts/mod-writer.md
+                                        # the Interview instructions for a new Mod
 
 Every command takes `--root DIR` to work on a World somewhere else. Paths given
 to `validate` are relative to where you are; paths given to `words`, `--write`
@@ -27,6 +29,7 @@ from pathlib import Path
 
 from . import _pov
 from ._wording import find_avoided
+from ._interview import interview_instructions
 from ._api import (
     Finding, WARNING, load_world, read_directory, sample_script, sample_world, schema_files,
 )
@@ -141,6 +144,20 @@ def schema(args):
     return 0
 
 
+def instructions(args):
+    """The instructions for an Interview about a new Mod, as pasted into an
+    LLM by hand or used with Claude Code: printed, or written to a file."""
+    text = interview_instructions("new-mod", "cli")
+    if args.write is None:
+        sys.stdout.write(text)
+        return 0
+    target = Path(args.root) / args.write
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    print(f"wrote the instructions for a new Mod to {target}")
+    return 0
+
+
 def write_into_empty(target, files):
     """Write `{relative path: text}` under a folder, which must not already
     hold anything."""
@@ -225,7 +242,12 @@ def main(argv=None):
     w.add_argument("paths", nargs="+", help="files, or folders to search for markdown")
     w.set_defaults(run=words)
 
-    for parser in (v, p, s, d, w):
+    i = sub.add_parser("instructions",
+                       help="the instructions for an Interview about a new Mod")
+    i.add_argument("--write", metavar="FILE", help="write them to FILE instead of printing them")
+    i.set_defaults(run=instructions)
+
+    for parser in (v, p, s, d, w, i):
         parser.add_argument("--root", default=".", help="the World's directory (default: here)")
 
     args = ap.parse_args(argv)
