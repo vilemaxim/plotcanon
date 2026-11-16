@@ -154,5 +154,118 @@ class WhatIsRefused(unittest.TestCase):
             reconciling(findings="one finding")
 
 
+SAMPLE = """\
+The draft is mostly sound.
+
+## Conflicts
+
+- `ysolde-marr`, `the-salt-ledger`: the Mod has her give an order at
+  `e03-storm-moon`, but she is `final-death` as of `e02-first-lantern`.
+  Options: a flashback, or another captain.
+
+## Warnings
+
+None.
+
+## Missing links
+
+- `tobren-vale`: "her brother" in the second scene is Tobren.
+
+## Slug mapping
+
+- `harbour-clerk`: is `clerk-pell`, by its alias "the harbour clerk".
+- `sister-oleen`: NEW. Nothing in the World is called "Sister Oleen".
+
+## New entities
+
+- `sister-oleen`: a new NPC.
+
+  ```yaml
+  ---
+  id: sister-oleen
+  type: npc
+  canon: proposed
+  ---
+  - not a finding
+  ## not a heading
+  ```
+
+## Player agency
+
+None.
+
+## Other drafts
+
+- `the-captains-last-order`, `ysolde-marr`: that draft has her sail at dusk
+  at the same Event.
+
+## Proposed changes
+
+- `the-salt-ledger`: swap `harbour-clerk` for `clerk-pell` in `features.npcs`.
+"""
+
+
+class ReadingTheReport(unittest.TestCase):
+    def test_a_report_in_the_shape_is_read_into_its_sections(self):
+        read = plotcanon.read_reconciliation(SAMPLE)
+
+        self.assertEqual(read.problems, ())
+        self.assertEqual(tuple(s.heading for s in read.sections),
+                         plotcanon.RECONCILIATION_SECTIONS)
+
+    def test_each_finding_starts_with_the_ids_it_is_about(self):
+        read = plotcanon.read_reconciliation(SAMPLE)
+
+        conflict, = read.section("Conflicts").findings
+        self.assertEqual(conflict.ids, ("ysolde-marr", "the-salt-ledger"))
+        self.assertTrue(conflict.text.startswith("the Mod has her give an order at"))
+        self.assertIn("Options: a flashback, or another captain.", conflict.text)
+        self.assertEqual([f.ids for f in read.section("Slug mapping").findings],
+                         [("harbour-clerk",), ("sister-oleen",)])
+        self.assertEqual(read.section("Other drafts").findings[0].ids,
+                         ("the-captains-last-order", "ysolde-marr"))
+
+    def test_none_is_a_section_with_no_findings(self):
+        read = plotcanon.read_reconciliation(SAMPLE)
+
+        self.assertEqual(read.section("Warnings").findings, ())
+        self.assertEqual(read.section("Warnings").text, "None.")
+
+    def test_a_code_block_under_a_finding_stays_in_it(self):
+        found, = plotcanon.read_reconciliation(SAMPLE).section("New entities").findings
+
+        self.assertIn("id: sister-oleen", found.text)
+        self.assertIn("## not a heading", found.text)
+        self.assertIn("- not a finding", found.text)
+
+    def test_a_missing_heading_and_one_of_its_own_are_problems(self):
+        text = SAMPLE.replace("## Warnings\n", "## Musings\n")
+
+        read = plotcanon.read_reconciliation(text)
+
+        self.assertEqual(len(read.problems), 2, read.problems)
+        self.assertTrue(any("Warnings" in p for p in read.problems))
+        self.assertTrue(any("Musings" in p for p in read.problems))
+        self.assertIsNone(read.section("Warnings"))
+
+    def test_headings_out_of_order_are_a_problem(self):
+        text = SAMPLE.replace("## Conflicts\n", "## Hold\n").replace(
+            "## Warnings\n", "## Conflicts\n").replace("## Hold\n", "## Warnings\n")
+
+        self.assertEqual(len(plotcanon.read_reconciliation(text).problems), 1)
+
+    def test_a_finding_with_no_ids_is_a_problem(self):
+        text = SAMPLE.replace("- `tobren-vale`: ", "- ")
+
+        read = plotcanon.read_reconciliation(text)
+
+        self.assertEqual(len(read.problems), 1, read.problems)
+        self.assertEqual(read.section("Missing links").findings[0].ids, ())
+
+    def test_the_text_must_be_text(self):
+        with self.assertRaises(TypeError):
+            plotcanon.read_reconciliation(None)
+
+
 if __name__ == "__main__":
     unittest.main()

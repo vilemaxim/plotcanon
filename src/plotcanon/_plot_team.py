@@ -303,3 +303,131 @@ def reconciliation_instructions(surface, *, draft=None, world=None, other_drafts
         "else.\n",
     ]
     return "\n".join(parts)
+
+
+@dataclass(frozen=True)
+class ReportFinding:
+    """One finding in a Reconciliation or a World review: the `ids` it starts
+    with, in the order written, and the rest of its `text`, with any lines
+    under its bullet."""
+
+    ids: tuple
+    text: str
+
+
+@dataclass(frozen=True)
+class ReportSection:
+    """One `##` section of a Reconciliation or a World review: its `heading`,
+    everything under it as `text`, and its `findings`, one per bullet."""
+
+    heading: str
+    text: str
+    findings: tuple
+
+
+@dataclass(frozen=True)
+class ReadReport:
+    """A Reconciliation or a World review, read: its `sections` in the order
+    written, and the `problems` with its shape, each as a sentence. Text
+    before the first heading is not kept."""
+
+    sections: tuple
+    problems: tuple
+
+    def section(self, heading):
+        """The section with this heading, or None when there is none."""
+        return next((s for s in self.sections if s.heading == heading), None)
+
+
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+_HEADING = re.compile(r"^##\s+(?!#)(.*?)\s*#*\s*$")
+_IDS = re.compile(r"^((?:`[^`\s]+`\s*,\s*)*`[^`\s]+`)\s*:\s*")
+
+
+def _lines_outside_fences(text):
+    """Each line of `text`, with whether it is outside a code block."""
+    fence = None
+    for line in text.splitlines():
+        opened = _FENCE.match(line)
+        if fence is None:
+            if opened:
+                fence = opened.group(1)
+            yield line, fence is None
+        else:
+            if opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence) \
+                    and not line.strip()[len(opened.group(1)):].strip():
+                fence = None
+            yield line, False
+
+
+def _finding(lines):
+    first, rest = lines[0][2:].strip(), lines[1:]
+    matched = _IDS.match(first)
+    ids = tuple(re.findall(r"`([^`]+)`", matched.group(1))) if matched else ()
+    body = [first[matched.end():] if matched else first]
+    body += [line[2:] if line.startswith("  ") else line for line in rest]
+    return ReportFinding(ids, "\n".join(body).strip())
+
+
+def _section(heading, lines):
+    findings, current = [], None
+    for line, outside in lines:
+        if outside and line.startswith("- "):
+            current = [line]
+            findings.append(current)
+        elif current is not None:
+            current.append(line)
+    text = "\n".join(line for line, _outside in lines).strip()
+    return ReportSection(heading, text, tuple(_finding(f) for f in findings))
+
+
+def _read(text, expected, what):
+    if not isinstance(text, str):
+        raise TypeError(f"{what} is text, not {type(text).__name__}")
+    headed = []
+    for line, outside in _lines_outside_fences(text):
+        heading = _HEADING.match(line) if outside else None
+        if heading:
+            headed.append((heading.group(1), []))
+        elif headed:
+            headed[-1][1].append((line, outside))
+    problems, sections, seen = [], [], []
+    for heading, lines in headed:
+        if heading not in expected:
+            problems.append(f"`## {heading}` is not one of the headings {what} has")
+        elif heading in seen:
+            problems.append(f"`## {heading}` is written twice")
+        else:
+            seen.append(heading)
+            sections.append(_section(heading, lines))
+    if seen != [h for h in expected if h in seen]:
+        problems.append(f"the headings are not in order: {', '.join(expected)}")
+    for heading in expected:
+        if heading not in seen:
+            problems.append(f"there is no `## {heading}`")
+    for section in sections:
+        if section.heading in PROSE_SECTIONS:
+            continue
+        for finding in section.findings:
+            if not finding.ids:
+                problems.append(f"a finding under `## {section.heading}` does not start "
+                                f"with the ids it is about: {finding.text.splitlines()[0]!r}")
+    return ReadReport(tuple(sections), tuple(problems))
+
+
+def read_reconciliation(text):
+    """Read what an LLM wrote for a Reconciliation into its sections and
+    findings. Each section is one of RECONCILIATION_SECTIONS, and `problems`
+    says where the text strays from the shape the instructions ask for: a
+    heading missing, written twice, out of order or not one of them, or a
+    finding that does not start with the ids it is about. A section headed
+    as asked is read even when there are problems elsewhere.
+
+    The shape: each heading is a line `## <heading>`. Under it, each finding
+    is a bullet at the start of a line, `- `, then its ids, each in
+    backticks and separated by commas, then `:` and the finding. Lines under
+    a bullet, indented by two spaces, belong to it. `None.` means a section
+    has no findings. Headings and bullets inside a code block are not read.
+    Raises TypeError when `text` is not text.
+    """
+    return _read(text, RECONCILIATION_SECTIONS, "a Reconciliation")

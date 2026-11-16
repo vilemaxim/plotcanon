@@ -26,7 +26,14 @@ from ._interview import (
     interview_report_opener,
     interview_revise_opener,
 )
-from ._plot_team import RECONCILIATION_SECTIONS, reconciliation_instructions
+from ._plot_team import (
+    RECONCILIATION_SECTIONS,
+    ReadReport,
+    ReportFinding,
+    ReportSection,
+    read_reconciliation,
+    reconciliation_instructions,
+)
 from ._story import Contest, Exit, Passage, Section, Story, story
 from ._path import LastStop, Path, check_path, path_steps
 from ._twine import FromTwine, from_twine, to_twee
@@ -69,7 +76,10 @@ __all__ = [
     "Path",
     "Report",
     "RECONCILIATION_SECTIONS",
+    "ReadReport",
     "Reference",
+    "ReportFinding",
+    "ReportSection",
     "ScriptedReport",
     "Section",
     "Story",
@@ -93,6 +103,7 @@ __all__ = [
     "name_of",
     "path_steps",
     "read_directory",
+    "read_reconciliation",
     "reconciliation_instructions",
     "references",
     "referrers",
