@@ -312,3 +312,53 @@ class TheGroupField(unittest.TestCase):
 
         self.assertEqual(errors, [f"{rel(1)}: `group` must be a short label, as text on one "
                                   "line of at most 60 characters"])
+
+
+def status_change(to, decision="proposed"):
+    return (f"{{entity: sister-ane, kind: status, decision: {decision}, from: alive, "
+            f"to: {to}, summary: Changed.}}")
+
+
+NARRATIVE = "{entity: sister-ane, kind: narrative, decision: proposed, summary: Spoke.}"
+
+
+class ChangesInParallel(unittest.TestCase):
+    """Parallel Groups' Canon Changes are still decided in order of Event,
+    then report id, then place in the report. When two Groups change the same
+    field of the same entity, both reports are warned, so a Plot Master
+    checks it."""
+
+    def test_two_groups_changing_one_field_is_a_warning_on_both(self):
+        _, warnings = findings(
+            (1, report(1, group="cellar", changes=status_change("missing"))),
+            (2, report(2, group="belfry", changes=f"{NARRATIVE}, {status_change('dead')}")))
+
+        self.assertEqual(warnings, [
+            f"{rel(1)}: `canon_changes[0]` changes `status` of `sister-ane`, as "
+            "`aa-the-bell-beneath-2` does in the Group `belfry`, which played alongside this "
+            "one — they are decided in order of report id, so check that they agree",
+            f"{rel(2)}: `canon_changes[1]` changes `status` of `sister-ane`, as "
+            "`aa-the-bell-beneath` does in the Group `cellar`, which played alongside this "
+            "one — they are decided in order of report id, so check that they agree",
+        ])
+
+    def test_the_same_group_changing_one_field_twice_is_not(self):
+        self.assertEqual(findings(
+            (1, report(1, AT_THE_BELL, group="cellar", finished="false",
+                       changes=status_change("missing"))),
+            (2, report(2, FROM_THE_BELL, group="cellar", changes=status_change("dead")))),
+            ([], []))
+
+    def test_changes_once_the_groups_came_back_together_are_not(self):
+        self.assertEqual(findings(
+            (1, report(1, AT_THE_BELL, group="cellar", finished="false",
+                       changes=status_change("missing"))),
+            (2, report(2, AT_THE_BELL, group="belfry", finished="false")),
+            (3, report(3, FROM_THE_BELL, changes=status_change("dead")))), ([], []))
+
+    def test_prose_changes_and_rejected_ones_are_not(self):
+        self.assertEqual(findings(
+            (1, report(1, group="cellar", changes=f"{NARRATIVE}, "
+                                                  f"{status_change('dead', 'rejected')}")),
+            (2, report(2, group="belfry", changes=f"{NARRATIVE}, {status_change('missing')}"))),
+            ([], []))

@@ -184,7 +184,11 @@ class Change:
     def order(self):
         """Sort key. Reports at the same event are taken in id order, with
         numbers compared as numbers: `aa-<mod>`, `aa-<mod>-2`, `aa-<mod>-10`.
-        Changes within one report are taken in the order the report lists them."""
+        Changes within one report are taken in the order the report lists them.
+
+        Reports from parallel Groups at one event (see `LinesOfPlay`) are
+        taken in id order too: it is only a tie-break, so the result is always
+        the same, and `check_parallel_changes` warns where it decides a field."""
         return (self.ordinal, natural_key(self.report_id), self.position)
 
 
@@ -976,6 +980,43 @@ def finishes(report):
     return report.fm.get("finished") is True and report.fm.get("ran") is not False
 
 
+def check_parallel_changes(docs, by_id, vocab, f):
+    """A warning on both reports when two Groups that played side by side
+    (see `LinesOfPlay`) change the same field of the same entity. Their
+    changes are still decided in one order, by `Change.order`, but which
+    comes last is only the order of their ids, so a Plot Master checks it.
+    A prose change moves no field, and a rejected one moves nothing."""
+    transition_kinds = set(vocab["canon_change_transition_kinds"])
+    kind_fields = vocab["canon_change_kind_fields"]
+    moving = set(vocab["vocabularies"]["canon_change_decision"]) \
+        - set(vocab["canon_change_decisions_raising_no_flag"])
+    for _mod_id, filed in sorted(reports_by_mod(docs, by_id).items()):
+        lines = LinesOfPlay(filed)
+        changing = {}   # (split, entity, field) -> {report rel: (report, group, index)}
+        for report in filed:
+            placed = lines.parallel[report.rel]
+            changes = report.fm.get("canon_changes")
+            if placed is None or not isinstance(changes, list):
+                continue
+            split, group = placed
+            for i, change in enumerate(changes):
+                if not isinstance(change, dict) or change.get("kind") not in transition_kinds \
+                        or change.get("decision") not in moving \
+                        or not isinstance(change.get("entity"), str):
+                    continue
+                key = (split, change["entity"], kind_fields[change["kind"]])
+                changing.setdefault(key, {}).setdefault(report.rel, (report, group, i))
+        for (_split, entity, field), reports in changing.items():
+            for report, group, i in reports.values():
+                for other, other_group, _j in reports.values():
+                    if other_group == group:
+                        continue
+                    f.warn(report.rel, f"`canon_changes[{i}]` changes `{field}` of `{entity}`, "
+                                       f"as `{other.id}` does in the Group `{other_group}`, "
+                                       f"which played alongside this one — they are decided "
+                                       f"in order of report id, so check that they agree")
+
+
 def collect_changes(docs, by_id, vocab, f):
     """E7 plus canon change shape.
 
@@ -1437,6 +1478,7 @@ def run_checks(files, head=None, dry_run_structure=None):
 
     check_events(docs, f)
     check_finished(docs, by_id, vocab, f)
+    check_parallel_changes(docs, by_id, vocab, f)
 
     changes = collect_changes(docs, by_id, vocab, f)
     changes_by_key = {}
