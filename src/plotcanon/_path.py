@@ -60,20 +60,42 @@ class LastStop:
     - `LastStop(known=False)`: there is an earlier report, but it has no Path
       that fits, so where it stopped is not known and a Path may start at any
       scene.
+    - `LastStop(among=("The bell", "Who rings it"))`: play comes back together
+      after a split, and the Groups that had not finished stopped at these
+      scenes, so a Path starts at one of them or at a Hook.
     """
 
     passage: str | None = None
     known: bool = True
+    among: tuple = ()
 
     def __post_init__(self):
         if self.passage is not None and not self.known:
             raise ValueError("a stop that is not known has no passage")
+        if self.among and (self.passage is not None or not self.known
+                           or len(self.among) < 2):
+            raise ValueError("a stop among several scenes names two or more, and nothing else")
+        object.__setattr__(self, "among", tuple(self.among))
+
+    @property
+    def passages(self):
+        """Every scene or ending a Path may start at besides a Hook, when where
+        play stopped is known."""
+        return self.among or (() if self.passage is None else (self.passage,))
 
     def lets_start_at(self, name):
         """Whether a Path may start at the scene or ending `name`."""
         if not self.known:
             return True
-        return self.passage is not None and key(self.passage) == key(name)
+        return any(key(passage) == key(name) for passage in self.passages)
+
+    def described(self):
+        """Where a Path may start besides a Hook, for saying so."""
+        if self.among:
+            either = " or ".join(f"`{passage}`" for passage in self.among)
+            return f"where the Path of one of the Groups that had not finished stopped ({either})"
+        last = "" if self.passage is None else f" (`{self.passage}`)"
+        return f"where the last report's Path stopped{last}"
 
 
 def as_last_stop(continues_from):
@@ -176,10 +198,9 @@ class _SceneStep:
                                 f"`{here.passage.name}` — its ways on are "
                                 f"{_ways_on(here.passage)}")
         elif here.at_start and not stop.lets_start_at(passage.name):
-            last = "" if stop.passage is None else f" (`{stop.passage}`)"
             problems.append(f"{where}: a Path starts with the Hook taken "
-                            f"(`hook: <the Hook>`), or where the last report's Path "
-                            f"stopped{last}, not at `{passage.name}`")
+                            f"(`hook: <the Hook>`), or {stop.described()}, "
+                            f"not at `{passage.name}`")
         return _Here(passage=passage)
 
     def written(self):
@@ -322,8 +343,8 @@ def path_steps(story, choices, *, continues_from=None, start=None):
         if here is None:
             raise ValueError(f"`{start}` is not a scene or outcome of the Mod")
         if not stop.lets_start_at(here.name):
-            raise ValueError(f"a walk starts at a Hook or where the last report's Path "
-                             f"stopped, not at `{here.name}`")
+            raise ValueError(f"a walk starts at a Hook or {stop.described()}, "
+                             f"not at `{here.name}`")
         steps = [_SceneStep(here.name)]
     for choice in choices:
         if not isinstance(choice, Exit):

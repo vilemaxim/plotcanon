@@ -754,6 +754,15 @@ carries on from there.
 """
 
 
+STOPPED_AMONG = """\
+### Where the last Stretch stopped
+
+The players split into Groups, and have come back together for this Stretch.
+The last reports on this Mod say play stopped at {stops}. This Stretch carries
+on from one of those.
+"""
+
+
 STOPPED_UNKNOWN = """\
 ### Where the last Stretch stopped
 
@@ -818,6 +827,10 @@ def _report_parts(mod, path, stop):
         parts.append(STOPPED_UNKNOWN.format(
             picked_up="The Path below starts where this Stretch picked up." if walked
             else "Ask me where this Stretch picked up."))
+    elif stop.among:
+        each = [f"`{stop.among[0]}` for one Group"] + [f"at `{passage}` for another"
+                                                       for passage in stop.among[1:]]
+        parts.append(STOPPED_AMONG.format(stops=", ".join(each[:-1]) + " and " + each[-1]))
     elif stop.passage is not None:
         parts.append(STOPPED_AT.format(passage=stop.passage))
     if walked:

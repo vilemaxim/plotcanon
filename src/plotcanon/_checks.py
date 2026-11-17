@@ -92,7 +92,7 @@ SCHEMAS = {
         "dir": "after-actions",
         "required": ["id", "type", "mod", "event", "ran", "finished", "mod_runner", "pcs",
                      "canon_changes"],
-        "optional": ["path"],
+        "optional": ["group", "path"],
     },
     "interlude-changes": {
         "dir": "interludes",
@@ -825,15 +825,96 @@ def reports_by_mod(docs, by_id):
             for mod_id, filed in reports.items()}
 
 
+def group_of(report):
+    """The Group a report covers, its `group`, or None when it has none: the
+    report then covers the whole Mod."""
+    group = report.fm.get("group")
+    return group.strip() if isinstance(group, str) and group.strip() else None
+
+
+class LinesOfPlay:
+    """A Mod's reports, read in order, as the lines of play they make.
+
+    Before any split there is one line. A report with a `group` is on that
+    Group's line: its first report branches from the Mod's line as it stood
+    before the split, and each later one with the same label follows the one
+    before it. Reports with different labels ran side by side, in parallel. A
+    report with no `group` after a split brings the Groups back together: it
+    follows every Group that had not finished, or every Group when all had.
+    That ends the split, and the next `group` starts a new one.
+
+    `follows[rel]` is what each report follows on from: a tuple of reports,
+    or of None for the start of the Mod. `parallel[rel]` is the split and the
+    Group a report is in, or None for a report with no `group`.
+    """
+
+    def __init__(self, filed):
+        self.trunk = None       # The last report on the Mod's own line.
+        self.split = {}         # Each Group's last report, by label.
+        self.splits = 0
+        self.follows, self.parallel = {}, {}
+        for report in filed:
+            group = group_of(report)
+            self.follows[report.rel] = self.follow(group)
+            if group is None:
+                self.trunk, self.split = report, {}
+                self.parallel[report.rel] = None
+            else:
+                if not self.split:
+                    self.splits += 1
+                self.split[group] = report
+                self.parallel[report.rel] = (self.splits, group)
+
+    def follow(self, group):
+        """What a report in `group` (None for none) would follow on from, next."""
+        if group is not None:
+            return (self.split.get(group, self.trunk),)
+        if not self.split:
+            return (self.trunk,)
+        tips = tuple(self.split.values())
+        unfinished = tuple(tip for tip in tips if not self.ended(tip))
+        return unfinished or tips
+
+    @property
+    def tips(self):
+        """The last report on each line still open after the last report."""
+        return tuple(self.split.values()) if self.split else \
+            (() if self.trunk is None else (self.trunk,))
+
+    def ended(self, report):
+        """The reports that finished the line `report` is on, by the time of
+        `report`: itself when it finishes it, or the reports that had already
+        finished every line it follows on from. Empty when its line goes on."""
+        if report is None:
+            return ()
+        before = self.ended_before(report)
+        return before or ((report,) if finishes(report) else ())
+
+    def ended_before(self, report):
+        """The reports that had finished every line `report` follows on from,
+        or empty when one of them goes on."""
+        ended = [self.ended(prev) for prev in self.follows[report.rel]]
+        if not all(ended):
+            return ()
+        unique = {r.rel: r for enders in ended for r in enders}
+        return tuple(unique.values())
+
+
+def _ids(reports):
+    return " and ".join(f"`{r.id}`" for r in reports)
+
+
 def check_finished(docs, by_id, vocab, f):
     """A mod's reports, read in order, against whether the mod is finished.
 
-    The report that says the mod is finished must be the last one. If another
-    report comes after it, both are in error: either may be the one just
+    Nothing may follow a report that finishes its line of play (see
+    `LinesOfPlay`): the whole Mod's, or a Group's. If another report comes
+    after it on that line, both are in error: either may be the one just
     submitted, so each is told about the other. And the mod's own `state`,
-    which a person sets, is compared with what its latest report says; a
-    disagreement is a warning on the mod, since the state is theirs to bring
-    up to date.
+    which a person sets, is compared with what its latest reports say: the
+    latest on each line still open, so on each Group of a split. The Mod is
+    finished when every one of them finishes it. A disagreement is a warning
+    on the mod, since the state is theirs to bring up to date.
 
     Reports are read by event, then by id (see `natural_key`). A report whose
     event does not resolve has no place in that order and is left out; it is
@@ -842,33 +923,42 @@ def check_finished(docs, by_id, vocab, f):
     unfinished = vocab["mod_states_unfinished"]
     has_run = vocab["mod_states_that_have_run"]
     for mod_id, filed in sorted(reports_by_mod(docs, by_id).items()):
-        ended_by = None
+        lines = LinesOfPlay(filed)
         for report in filed:
-            if ended_by is not None:
-                f.error(report.rel, f"mod `{mod_id}` was finished by `{ended_by.id}` — a "
-                                    f"finished mod cannot be reported on again. If there was "
-                                    f"more to play, `{ended_by.id}` should say `finished: false`")
-                f.error(ended_by.rel, f"says mod `{mod_id}` is finished, but `{report.id}` "
-                                      f"reports on it afterwards — only the last report on a "
-                                      f"mod can say `finished: true`")
-            elif finishes(report):
-                ended_by = report
+            enders = lines.ended_before(report)
+            if not enders:
+                continue
+            last = "in a Group" if lines.parallel[enders[0].rel] else "on a mod"
+            fix = (f"`{enders[0].id}` should say" if len(enders) == 1
+                   else "one of them should say")
+            f.error(report.rel, f"mod `{mod_id}` was finished by {_ids(enders)} — a "
+                                f"finished mod cannot be reported on again. If there was "
+                                f"more to play, {fix} `finished: false`")
+            for ender in enders:
+                f.error(ender.rel, f"says mod `{mod_id}` is finished, but `{report.id}` "
+                                   f"reports on it afterwards — only the last report "
+                                   f"{last} can say `finished: true`")
 
         if sum(1 for doc in docs if doc.id == mod_id) > 1:
             continue  # Two documents claim this id; that is already an error.
-        mod, latest = by_id[mod_id], filed[-1]
+        mod, tips = by_id[mod_id], lines.tips
         state = mod.fm.get("state")
         fix = "set the state to match, or correct the report"
-        if finishes(latest) and state in unfinished:
-            f.warn(mod.rel, f"`state: {state}`, but its latest report (`{latest.id}`) says "
-                            f"the mod is finished — {fix}")
-        elif latest.fm.get("finished") is False and state == vocab["mod_state_finished"]:
-            f.warn(mod.rel, f"`state: {state}`, but its latest report (`{latest.id}`) says "
-                            f"there is more to play — {fix}")
-        elif (latest.fm.get("finished") is False and latest.fm.get("ran") is True
+        if len(tips) == 1:
+            latest = f"its latest report (`{tips[0].id}`) says"
+        else:
+            latest = f"its latest reports, one for each Group ({_ids(tips)}), say"
+            fix += "s"
+        if all(finishes(tip) for tip in tips) and state in unfinished:
+            f.warn(mod.rel, f"`state: {state}`, but {latest} the mod is finished — {fix}")
+        elif any(tip.fm.get("finished") is False for tip in tips) \
+                and state == vocab["mod_state_finished"]:
+            f.warn(mod.rel, f"`state: {state}`, but {latest} there is more to play — {fix}")
+        elif (any(tip.fm.get("finished") is False and tip.fm.get("ran") is True
+                  for tip in tips)
               and state in unfinished and state not in has_run):
-            f.warn(mod.rel, f"`state: {state}`, but its latest report (`{latest.id}`) says "
-                            f"it has been run and has more to play — {fix}")
+            f.warn(mod.rel, f"`state: {state}`, but {latest} it has been run and has more "
+                            f"to play — {fix}")
 
 
 def finishes(report):
@@ -1198,34 +1288,64 @@ class PathReader:
         self._story = story
         self.by_id = by_id
         self.ordered = reports_by_mod(docs, by_id)
-        self.stories, self.walked = {}, {}
+        self.stories, self.walked, self.lined = {}, {}, {}
 
     def told(self, mod):
         if mod.id not in self.stories:
             self.stories[mod.id] = self._story(mod.body)
         return self.stories[mod.id]
 
-    def last_stop(self, mod, before=None):
+    def lines(self, mod):
+        if mod.id not in self.lined:
+            self.lined[mod.id] = LinesOfPlay(self.ordered.get(mod.id, []))
+        return self.lined[mod.id]
+
+    def last_stop(self, mod, before=None, group=None):
         """Where play stopped on `mod` before the report `before`, or after
-        its last report when `before` is None, as a `LastStop`: the end of the
-        Path of the last earlier report that ran; no earlier report; or not
-        known, when that report has no Path that fits, or `before` has no
-        place in the order."""
-        from ._path import LastStop, has_path
+        its last report when `before` is None, as a `LastStop`, for a report
+        in `group`. With `before`, `group` is that report's own when None.
+
+        It is where the line of play the report follows on from stopped (see
+        `LinesOfPlay`): the end of the Path of its last report that ran; no
+        earlier report; or not known, when that report has no Path that fits,
+        or `before` has no place in the order. A report with no `group` after
+        a split follows several Groups, and may start where any of them
+        stopped."""
+        from ._path import LastStop
 
         filed = self.ordered.get(mod.id, [])
-        if before is not None:
-            if before not in filed:
-                return LastStop(known=False)
-            filed = filed[:filed.index(before)]
-        earlier = [d for d in filed if d.fm.get("ran") is not False]
-        if not earlier:
-            return LastStop()
-        last = earlier[-1]
-        if not has_path(last.fm.get("path")) or not self.told(mod).playable:
+        if before is None:
+            follows = self.lines(mod).follow(group)
+        elif before not in filed:
             return LastStop(known=False)
-        end = self.path_of(last, mod).end
-        return LastStop(known=False) if end is None else LastStop(end.name)
+        elif group is None or group == group_of(before):
+            follows = self.lines(mod).follows[before.rel]
+        else:
+            follows = LinesOfPlay(filed[:filed.index(before)]).follow(group)
+        return self.stop_after(mod, follows)
+
+    def stop_after(self, mod, reports):
+        """Where play stopped after any of `reports`, each the last on a line
+        of play, or None for the start of the Mod."""
+        from ._path import LastStop, has_path
+
+        stops = []
+        for report in reports:
+            if report is None:
+                stops.append(LastStop())
+            elif report.fm.get("ran") is False:
+                stops.append(self.stop_after(mod, self.lines(mod).follows[report.rel]))
+            elif not has_path(report.fm.get("path")) or not self.told(mod).playable:
+                stops.append(LastStop(known=False))
+            else:
+                end = self.path_of(report, mod).end
+                stops.append(LastStop(known=False) if end is None else LastStop(end.name))
+        if not all(stop.known for stop in stops):
+            return LastStop(known=False)
+        passages = list(dict.fromkeys(p for stop in stops for p in stop.passages))
+        if len(passages) > 1:
+            return LastStop(among=tuple(passages))
+        return LastStop(passages[0]) if passages else LastStop()
 
     def path_of(self, doc, mod):
         """The report's Path, read from where play stopped before it."""
