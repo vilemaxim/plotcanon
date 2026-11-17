@@ -539,3 +539,29 @@ class GroupsAtMoreThanOneEvent(unittest.TestCase):
         self.assertEqual(plotcanon.last_stop(files, "the-bell-beneath", group="cellar",
                                              event=E02),
                          plotcanon.LastStop("The bell"))
+
+
+class FlagsOnASplitMod(unittest.TestCase):
+    """A report finishes its own Mod, and so does not flag it, only when every
+    Group at the Mod's latest Event has finished with it."""
+
+    def flagged(self, *filed, submitted):
+        result = loaded(*filed)
+        self.assertEqual(list(result.errors), [])
+        n, text = submitted
+        checked = plotcanon.check_file(result.world, placed(n, text), text)
+        self.assertTrue(checked.ok, checked.text())
+        return "the-bell-beneath" in plotcanon.flagged_mods(result.world, checked.document)
+
+    def test_a_group_finishing_while_another_has_more_to_play_flags_its_mod(self):
+        self.assertTrue(self.flagged(
+            (1, report(1, AT_WHO_RINGS, group="belfry", finished="false")),
+            submitted=(2, report(2, group="cellar", changes=NARRATIVE))))
+
+    def test_the_last_group_to_finish_does_not_flag_its_mod(self):
+        self.assertFalse(self.flagged(
+            (1, report(1, group="belfry")),
+            submitted=(2, report(2, group="cellar", changes=NARRATIVE))))
+
+    def test_a_report_with_no_group_that_finishes_does_not_flag_its_mod(self):
+        self.assertFalse(self.flagged(submitted=(1, report(1, changes=NARRATIVE))))

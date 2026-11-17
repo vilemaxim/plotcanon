@@ -281,8 +281,10 @@ def flags(world, report):
     changes, in any Campaign of the World. Unfinished means the Mod still has
     play ahead of it: not finished and not shelved. That includes the report's
     own Mod when it has more to play, since what happened so far may affect
-    the rest of it. A report that says it finished its Mod does not flag that
-    Mod, whatever state the Mod's file is still in.
+    the rest of it. A report that finishes its Mod does not flag that Mod,
+    whatever state the Mod's file is still in. After a split, a report
+    finishes its Mod only when every Group at the Mod's latest Event has
+    finished by then, so a Group finishing while another plays on flags it.
 
     A Flag is raised when a change is proposed and stands once it is approved;
     it is for a person to dismiss. A rejected change did not happen, so it
@@ -302,9 +304,7 @@ def flags(world, report):
     not_raising = vocab["canon_change_decisions_raising_no_flag"]
     changes = report.fields.get("canon_changes")
     raised = []
-    ends_its_mod = (report.fields.get("finished") is True
-                    and report.fields.get("ran") is not False)
-    just_finished = report.fields.get("mod") if ends_its_mod else None
+    just_finished = report.fields.get("mod") if _finishes_its_mod(world, report) else None
     for mod in world.of_type("mod"):
         if mod.fields.get("state") not in unfinished or mod.id == just_finished:
             continue
@@ -318,6 +318,23 @@ def flags(world, report):
             if isinstance(entity, str) and entity in featured:
                 raised.append(Flag(mod.id, entity, position))
     return sorted(raised, key=lambda flag: (flag.mod, flag.change))
+
+
+def _finishes_its_mod(world, report):
+    """Whether `report`, an After-Action Report's `Document`, finishes its
+    Mod, read with the World's other reports on it (see
+    `_checks.finishes_its_mod`)."""
+    fields = dict(report.fields)
+    if fields.get("finished") is not True or fields.get("ran") is False:
+        return False
+    if _checks.group_label(fields.get("group")) is None:
+        return True
+    docs, by_id, _generated = _checks.collect_docs(_files_of(world), _checks.Findings())
+    standing = _checks.Doc(report.path, fields, report.body, report.type, report.id)
+    docs = [d for d in docs if d.rel != report.path and d.id != report.id] + [standing]
+    by_id = {**by_id, report.id: standing}
+    filed = _checks.reports_by_mod(docs, by_id).get(fields.get("mod"), [])
+    return _checks.finishes_its_mod(filed, by_id, standing)
 
 
 def flagged_mods(world, report):

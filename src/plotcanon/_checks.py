@@ -839,11 +839,16 @@ def reports_by_mod(docs, by_id):
             for mod_id, filed in reports.items()}
 
 
+def group_label(value):
+    """A `group` as the label of a Group: its text stripped, or None when it
+    is not text or is blank, which is no Group."""
+    return (value.strip() or None) if isinstance(value, str) else None
+
+
 def group_of(report):
     """The Group a report covers, its `group`, or None when it has none: the
     report then covers the whole Mod."""
-    group = report.fm.get("group")
-    return group.strip() if isinstance(group, str) and group.strip() else None
+    return group_label(report.fm.get("group"))
 
 
 class Placement(NamedTuple):
@@ -1001,6 +1006,17 @@ def check_finished(docs, by_id, vocab, f):
               and state in unfinished and state not in has_run):
             f.warn(mod.rel, f"`state: {state}`, but {latest} it has been run and has more "
                             f"to play — {fix}")
+
+
+def finishes_its_mod(filed, by_id, report):
+    """Whether the Mod is finished once `report`, one of its reports `filed`
+    in order, has been played: when every Group at the Mod's latest Event by
+    then has a report that finishes it, or, with no split, when `report`
+    finishes the Mod (see `LinesOfPlay`)."""
+    if report not in filed:
+        return finishes(report)
+    tips = LinesOfPlay(filed[:filed.index(report) + 1], by_id).tips
+    return bool(tips) and all(finishes(tip) for tip in tips)
 
 
 def finishes(report):
