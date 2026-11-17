@@ -866,9 +866,11 @@ class LinesOfPlay:
         self.split = {}         # Each Group's last report, by label.
         self.splits = 0
         self.follows, self.parallel = {}, {}
+        self.enders, self.enders_before = {}, {}
         for report in filed:
             group = group_of(report)
             self.follows[report.rel] = self.follow(group)
+            self.read_ends(report)
             if group is None:
                 self.trunk, self.split = report, {}
                 self.parallel[report.rel] = None
@@ -898,19 +900,21 @@ class LinesOfPlay:
         """The reports that finished the line `report` is on, by the time of
         `report`: itself when it finishes it, or the reports that had already
         finished every line it follows on from. Empty when its line goes on."""
-        if report is None:
-            return ()
-        before = self.ended_before(report)
-        return before or ((report,) if finishes(report) else ())
+        return () if report is None else self.enders[report.rel]
 
     def ended_before(self, report):
         """The reports that had finished every line `report` follows on from,
         or empty when one of them goes on."""
+        return self.enders_before[report.rel]
+
+    def read_ends(self, report):
+        """Note what had finished the lines `report` follows on from, and
+        what has finished its own, from the reports before it."""
         ended = [self.ended(prev) for prev in self.follows[report.rel]]
-        if not all(ended):
-            return ()
-        unique = {r.rel: r for enders in ended for r in enders}
-        return tuple(unique.values())
+        before = tuple({r.rel: r for enders in ended for r in enders}.values()) \
+            if all(ended) else ()
+        self.enders_before[report.rel] = before
+        self.enders[report.rel] = before or ((report,) if finishes(report) else ())
 
 
 def _ids(reports):
@@ -1339,6 +1343,7 @@ class PathReader:
         self.by_id = by_id
         self.ordered = reports_by_mod(docs, by_id)
         self.stories, self.walked, self.lined = {}, {}, {}
+        self.stopped, self.done = {}, set()
 
     def told(self, mod):
         if mod.id not in self.stories:
@@ -1377,19 +1382,11 @@ class PathReader:
     def stop_after(self, mod, reports):
         """Where play stopped after any of `reports`, each the last on a line
         of play, or None for the start of the Mod."""
-        from ._path import LastStop, has_path
+        from ._path import LastStop
 
-        stops = []
-        for report in reports:
-            if report is None:
-                stops.append(LastStop())
-            elif report.fm.get("ran") is False:
-                stops.append(self.stop_after(mod, self.lines(mod).follows[report.rel]))
-            elif not has_path(report.fm.get("path")) or not self.told(mod).playable:
-                stops.append(LastStop(known=False))
-            else:
-                end = self.path_of(report, mod).end
-                stops.append(LastStop(known=False) if end is None else LastStop(end.name))
+        self.read(mod)
+        stops = [LastStop() if report is None else self.stopped[report.rel]
+                 for report in reports]
         if not all(stop.known for stop in stops):
             return LastStop(known=False)
         passages = list(dict.fromkeys(p for stop in stops for p in stop.passages))
@@ -1397,10 +1394,35 @@ class PathReader:
             return LastStop(among=tuple(passages))
         return LastStop(passages[0]) if passages else LastStop()
 
+    def read(self, mod):
+        """Read every report on `mod` once, in order: its Path, from where
+        play stopped before it, and where play stopped after it. Each report
+        follows on only from reports before it, so one pass reads them all."""
+        from ._path import LastStop, check_path, has_path
+
+        if mod.id in self.done:
+            return
+        self.done.add(mod.id)
+        lines = self.lines(mod)
+        for report in self.ordered.get(mod.id, []):
+            before = self.stop_after(mod, lines.follows[report.rel])
+            if has_path(report.fm.get("path")) and self.told(mod).playable:
+                self.walked[report.rel] = check_path(self.told(mod), report.fm.get("path"),
+                                                     continues_from=before)
+            if report.fm.get("ran") is False:
+                self.stopped[report.rel] = before
+            elif report.rel not in self.walked:
+                self.stopped[report.rel] = LastStop(known=False)
+            else:
+                end = self.walked[report.rel].end
+                self.stopped[report.rel] = LastStop(known=False) if end is None \
+                    else LastStop(end.name)
+
     def path_of(self, doc, mod):
         """The report's Path, read from where play stopped before it."""
         from ._path import check_path
 
+        self.read(mod)
         if doc.rel not in self.walked:
             self.walked[doc.rel] = check_path(self.told(mod), doc.fm.get("path"),
                                               continues_from=self.last_stop(mod, doc))

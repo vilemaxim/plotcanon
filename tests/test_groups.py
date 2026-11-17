@@ -51,7 +51,7 @@ event: e04-second-lantern
 {group_field}ran: {ran}
 finished: {finished}
 mod_runner: sam
-pcs: [pc-bram-tolliver]
+pcs: {"[]" if ran == "false" else "[pc-bram-tolliver]"}
 {path_field}canon_changes: [{changes}]
 ---
 
@@ -399,3 +399,22 @@ class TheSchemaDoc(unittest.TestCase):
         self.assertEqual(later.problems, ())
         self.assertFalse(plotcanon.check_path(self.story, together["path"],
                                               continues_from=nave.end.name).ok)
+
+
+class AModWithManyReports(unittest.TestCase):
+    """Reading a Mod's lines of play takes one pass over its reports, so a
+    Mod with no `group` on any report checks however many reports it has."""
+
+    def test_a_thousand_reports_check_without_error(self):
+        reports = [(1, report(1, AT_THE_BELL, finished="false"))]
+        reports += [(n, report(n, "  - The bell\n", finished="false")) for n in range(2, 1001)]
+
+        self.assertEqual(list(loaded(*reports).errors), [])
+
+    def test_a_thousand_reports_that_did_not_run_check_without_error(self):
+        reports = [(1, report(1, AT_THE_BELL, finished="false"))]
+        reports += [(n, report(n, None, finished="false", ran="false"))
+                    for n in range(2, 1001)]
+        reports += [(1001, report(1001, FROM_THE_BELL))]
+
+        self.assertEqual(list(loaded(*reports).errors), [])
