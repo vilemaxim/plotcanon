@@ -385,9 +385,9 @@ def well_shaped(rel, fm, typ, f):
         fm["id"] = None
 
     group = fm.get("group") if typ == "after-action" else None
-    if group is not None and (not isinstance(group, str) or not group.strip()
-                              or "\n" in group.strip()
-                              or len(group.strip()) > MAX_GROUP_CHARACTERS):
+    label = group_label(group)
+    if group is not None and (label is None or "\n" in label
+                              or len(label) > MAX_GROUP_CHARACTERS):
         wrong("group", f"`group` must be a short label, as text on one line of at most "
                        f"{MAX_GROUP_CHARACTERS} characters")
         fm["group"] = None
@@ -859,6 +859,15 @@ class Placement(NamedTuple):
     group: str
 
 
+class Changing(NamedTuple):
+    """A report in a Group that changes a field, at `index` in its
+    `canon_changes`."""
+
+    report: Doc
+    group: str
+    index: int
+
+
 class LinesOfPlay:
     """A Mod's reports, read in order, as the lines of play they make.
 
@@ -947,7 +956,8 @@ class LinesOfPlay:
         self.enders[report.rel] = before or ((report,) if finishes(report) else ())
 
 
-def _ids(reports):
+def listed_ids(reports):
+    """Reports' ids, for saying so: `a` and `b`."""
     return " and ".join(f"`{r.id}`" for r in reports)
 
 
@@ -975,13 +985,13 @@ def check_finished(docs, by_id, vocab, f):
             enders = lines.ended_before(report)
             if not enders:
                 continue
-            last = "in a Group" if lines.parallel[enders[0].rel] else "on a mod"
             fix = (f"`{enders[0].id}` should say" if len(enders) == 1
                    else "one of them should say")
-            f.error(report.rel, f"mod `{mod_id}` was finished by {_ids(enders)} — a "
+            f.error(report.rel, f"mod `{mod_id}` was finished by {listed_ids(enders)} — a "
                                 f"finished mod cannot be reported on again. If there was "
                                 f"more to play, {fix} `finished: false`")
             for ender in enders:
+                last = "in a Group" if lines.parallel[ender.rel] else "on a mod"
                 f.error(ender.rel, f"says mod `{mod_id}` is finished, but `{report.id}` "
                                    f"reports on it afterwards — only the last report "
                                    f"{last} can say `finished: true`")
@@ -994,7 +1004,7 @@ def check_finished(docs, by_id, vocab, f):
         if len(tips) == 1:
             latest = f"its latest report (`{tips[0].id}`) says"
         else:
-            latest = f"its latest reports, one for each Group ({_ids(tips)}), say"
+            latest = f"its latest reports, one for each Group ({listed_ids(tips)}), say"
             fix += "s"
         if all(finishes(tip) for tip in tips) and state in unfinished:
             f.warn(mod.rel, f"`state: {state}`, but {latest} the mod is finished — {fix}")
@@ -1037,29 +1047,33 @@ def check_parallel_changes(docs, by_id, vocab, f):
         - set(vocab["canon_change_decisions_raising_no_flag"])
     for _mod_id, filed in sorted(reports_by_mod(docs, by_id).items()):
         lines = LinesOfPlay(filed, by_id)
-        changing = {}   # (split, entity, field) -> {report rel: (report, group, index)}
+        changing = {}   # (split, entity, field) -> {report rel: Changing}
         for report in filed:
             placed = lines.parallel[report.rel]
             changes = report.fm.get("canon_changes")
             if placed is None or not isinstance(changes, list):
                 continue
-            split, group = placed
             for i, change in enumerate(changes):
                 if not isinstance(change, dict) or change.get("kind") not in transition_kinds \
                         or change.get("decision") not in moving \
                         or not isinstance(change.get("entity"), str):
                     continue
-                key = (split, change["entity"], kind_fields[change["kind"]])
-                changing.setdefault(key, {}).setdefault(report.rel, (report, group, i))
+                key = (placed.split, change["entity"], kind_fields[change["kind"]])
+                changing.setdefault(key, {}).setdefault(
+                    report.rel, Changing(report, placed.group, i))
         for (_split, entity, field), reports in changing.items():
-            for report, group, i in reports.values():
-                for other, other_group, _j in reports.values():
-                    if other_group == group:
-                        continue
-                    f.warn(report.rel, f"`canon_changes[{i}]` changes `{field}` of `{entity}`, "
-                                       f"as `{other.id}` does in the Group `{other_group}`, "
-                                       f"which played alongside this one — they are decided "
-                                       f"in order of report id, so check that they agree")
+            for this in reports.values():
+                others = [other for other in reports.values() if other.group != this.group]
+                if not others:
+                    continue
+                each = [f"`{others[0].report.id}` does in the Group `{others[0].group}`"]
+                each += [f"`{other.report.id}` in the Group `{other.group}`"
+                         for other in others[1:]]
+                listed = each[0] if len(each) == 1 else ", ".join(each[:-1]) + " and " + each[-1]
+                f.warn(this.report.rel,
+                       f"`canon_changes[{this.index}]` changes `{field}` of `{entity}`, as "
+                       f"{listed}, which played alongside this one — they are "
+                       f"decided in order of report id, so check that they agree")
 
 
 def collect_changes(docs, by_id, vocab, f):
@@ -1383,7 +1397,7 @@ class PathReader:
         self._story = story
         self.by_id = by_id
         self.ordered = reports_by_mod(docs, by_id)
-        self.stories, self.walked, self.lined = {}, {}, {}
+        self.stories, self.walked, self.lines_by_mod = {}, {}, {}
         self.stopped, self.done = {}, set()
 
     def told(self, mod):
@@ -1392,9 +1406,9 @@ class PathReader:
         return self.stories[mod.id]
 
     def lines(self, mod):
-        if mod.id not in self.lined:
-            self.lined[mod.id] = LinesOfPlay(self.ordered.get(mod.id, []), self.by_id)
-        return self.lined[mod.id]
+        if mod.id not in self.lines_by_mod:
+            self.lines_by_mod[mod.id] = LinesOfPlay(self.ordered.get(mod.id, []), self.by_id)
+        return self.lines_by_mod[mod.id]
 
     def last_stop(self, mod, before=None, group=None, ordinal=None):
         """Where play stopped on `mod` before the report `before`, or after

@@ -378,6 +378,27 @@ class ChangesInParallel(unittest.TestCase):
             "one — they are decided in order of report id, so check that they agree",
         ])
 
+    def test_with_three_groups_each_report_is_warned_once(self):
+        _, warnings = findings(
+            (1, report(1, group="cellar", changes=status_change("missing"))),
+            (2, report(2, group="belfry", changes=status_change("dead"))),
+            (3, report(3, group="nave", changes=status_change("dead"))))
+
+        self.assertEqual(warnings, [
+            f"{rel(1)}: `canon_changes[0]` changes `status` of `sister-ane`, as "
+            "`aa-the-bell-beneath-2` does in the Group `belfry` and `aa-the-bell-beneath-3` "
+            "in the Group `nave`, which played alongside this one — they are decided in "
+            "order of report id, so check that they agree",
+            f"{rel(2)}: `canon_changes[0]` changes `status` of `sister-ane`, as "
+            "`aa-the-bell-beneath` does in the Group `cellar` and `aa-the-bell-beneath-3` "
+            "in the Group `nave`, which played alongside this one — they are decided in "
+            "order of report id, so check that they agree",
+            f"{rel(3)}: `canon_changes[0]` changes `status` of `sister-ane`, as "
+            "`aa-the-bell-beneath` does in the Group `cellar` and `aa-the-bell-beneath-2` "
+            "in the Group `belfry`, which played alongside this one — they are decided in "
+            "order of report id, so check that they agree",
+        ])
+
     def test_the_same_group_changing_one_field_twice_is_not(self):
         self.assertEqual(findings(
             (1, report(1, AT_THE_BELL, group="cellar", finished="false",

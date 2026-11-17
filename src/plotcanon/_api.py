@@ -483,7 +483,7 @@ def last_stop(world, mod, *, before=None, group=None, event=None):
             return LastStop(known=False)
     if group is not None and not isinstance(group, str):
         raise TypeError(f"a Group is its label, as text, not {type(group).__name__}")
-    label = None if group is None else group.strip() or None
+    label = _checks.group_label(group)
     ordinal = None
     if event is not None:
         ordinal = _checks.ordinal_of(getattr(event, "id", event), by_id)
