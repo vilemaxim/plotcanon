@@ -106,7 +106,8 @@ from it:
 - **Errors**: a step that names no Hook, scene, ending or Contest the mod has;
   a step that cannot be reached from the one before it, by a scene's exits, a
   Hook's link or a Contest's result; a result the Contest does not have; a
-  first step that is neither a Hook nor where the last report's Path stopped;
+  first step that is neither a Hook nor where the last report's Path stopped,
+  or, after several Groups that had not finished, not where one of them did;
   a Path that ends at a Hook or a Contest. The report before is the last one
   on the same mod that ran, by event and then id, on the same line of play:
   after a split, in the same Group (see [`group`](#group)). If that report
@@ -130,7 +131,7 @@ follow each other in id order. Each Group has its own line of play:
 
 - **Its Path** starts where its own last report stopped. A Group's first
   report starts where the whole mod stopped before the players split, or at a
-  Hook.
+  Hook, as any report may after one stop.
 - **`finished: true`** says the Group has nothing more to play. Nothing may
   follow it in that Group; a later report with the same label at that event
   is an error, on both. Two Groups may each finish. **The mod is finished
@@ -139,7 +140,7 @@ follow each other in id order. Each Group has its own line of play:
 - **A later report with no `group` brings the Groups back together.** It
   continues from where the Group that had not finished stopped. If several
   had not, its Path's first step says which: it must be where one of them
-  stopped. If every Group had finished, the mod was finished, and a later
+  stopped, and a Hook is an error. If every Group had finished, the mod was finished, and a later
   report is an error, as above. The next report with a `group` starts a new
   split, from there.
 - **The Groups of one event have come back together by the next.** A split

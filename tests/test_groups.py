@@ -206,9 +206,37 @@ class ComingBackTogether(unittest.TestCase):
             (3, report(3, "  - The descent\n  - The crypt floods\n")))
 
         self.assertEqual(errors, [
-            f"{rel(3)}: `path[0]`: a Path starts with the Hook taken (`hook: <the Hook>`), or "
-            "where the Path of one of the Groups that had not finished stopped (`The bell` or "
-            "`Who rings it`), not at `The descent`"])
+            f"{rel(3)}: `path[0]`: a Path that brings Groups back together starts where one "
+            "of the Groups that had not finished stopped (`The bell` or `Who rings it`), not "
+            "at `The descent`"])
+
+    def test_with_two_groups_unfinished_it_may_not_start_at_a_hook(self):
+        errors, _ = findings(
+            (1, report(1, AT_THE_BELL, group="cellar", finished="false")),
+            (2, report(2, AT_WHO_RINGS, group="belfry", finished="false")),
+            (3, report(3)))
+
+        self.assertEqual(errors, [
+            f"{rel(3)}: `path[0]`: a Path that brings Groups back together starts where one "
+            "of the Groups that had not finished stopped (`The bell` or `Who rings it`), not "
+            "with the Hook `The sister asks them to close what was opened`"])
+
+    def test_with_one_group_unfinished_it_may_start_at_a_hook_as_after_any_one_stop(self):
+        for together in (report(3), report(3, FROM_WHO_RINGS)):
+            with self.subTest(together=together):
+                self.assertEqual(findings(
+                    (1, report(1, group="cellar")),
+                    (2, report(2, AT_WHO_RINGS, group="belfry", finished="false")),
+                    (3, together)), ([], []))
+
+    def test_a_walk_that_brings_two_groups_back_together_may_not_start_at_the_premise(self):
+        story = plotcanon.story(plotcanon.sample_world()[MOD])
+        stop = plotcanon.LastStop(among=("The bell", "Who rings it"))
+
+        with self.assertRaises(ValueError):
+            plotcanon.path_steps(story, [story.start.exits[0]], continues_from=stop)
+        self.assertEqual(plotcanon.path_steps(story, [], continues_from=stop, start="The bell"),
+                         ["The bell"])
 
     def test_after_every_group_finished_it_is_an_error_as_today(self):
         errors, _ = findings((1, report(1, group="cellar")), (2, report(2, group="belfry")),
