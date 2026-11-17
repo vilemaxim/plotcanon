@@ -14,9 +14,9 @@ plotcanon owns the schema. A document type, field or vocabulary value is added h
 Pin a tagged version:
 
 ```sh
-uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.14.0"
+uv add "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.15.0"
 # or
-pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.14.0"
+pip install "plotcanon @ git+https://github.com/vilemaxim/plotcanon@v0.15.0"
 ```
 
 It needs Python 3.12 or later, and PyYAML.
