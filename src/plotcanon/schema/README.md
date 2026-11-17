@@ -69,6 +69,15 @@ difference. `as_of` advances only when an approved after-action canon change mov
 text and lives only on event files. Never write an in-world date on an NPC, a
 mod, or an after-action — it will drift out of agreement with the event registry.
 
+**After-action reports on one mod are read by event, then id.** That order says
+which report follows which, and in what order their canon changes are decided.
+When a mod's players split into **Groups** at one event, each Group's report
+says which it covers in `group`. Groups are parallel only at that event: each
+has its own line of play, and they have come back together by the next report
+with no `group`, or the next event. Between parallel Groups, id order is only a
+tie-break, and the validator warns where it decides a field. See
+[after-action.md](after-action.md#group).
+
 **Body headings are fixed.** Agents and the validator locate content by heading.
 Add sections if you need them; do not rename or drop the listed ones. Empty is
 fine, missing is not.
