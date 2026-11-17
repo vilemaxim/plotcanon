@@ -618,6 +618,15 @@ FINISHED_RULE = """\
 - **`finished`** is `true` if the Mod has nothing left to play after this
   Stretch, and `false` if play stopped with more to come.
 """
+GROUP_RULE = """\
+- **`group`** is only for a Stretch played by one of several Groups the
+  players split into at this Event, side by side, each with its own Mod
+  Runner. Then add `group: <a short label for my Group>` after `event`: on one
+  line, at most 60 characters, and the same on every report from my Group at
+  this Event. `finished` then says whether my Group has anything left to play.
+  Otherwise leave `group` out, and the report covers the whole Mod. If you do
+  not know whether the players split, ask me.
+"""
 PATH_RULE = """\
 - **`path`** is the Path, copied exactly as it is given at the end of these
   instructions: the same steps, in the same order, spelled the same. Do not
@@ -884,6 +893,7 @@ def _report(surface, mod, path, stop, event, world):
         EVENT_ASKED if event is None else EVENT_GIVEN.format(event=event),
         RAN_WALKED if made.walked else RAN_ASKED,
         FINISHED_RULE,
+        GROUP_RULE,
         PATH_RULE if made.walked else NO_PATH_RULE,
     ])
     parts = [

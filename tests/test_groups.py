@@ -565,3 +565,17 @@ class FlagsOnASplitMod(unittest.TestCase):
 
     def test_a_report_with_no_group_that_finishes_does_not_flag_its_mod(self):
         self.assertFalse(self.flagged(submitted=(1, report(1, changes=NARRATIVE))))
+
+
+class AReportInterviewExplainsGroup(unittest.TestCase):
+    def test_it_explains_the_optional_group_field(self):
+        mod = plotcanon.sample_world()[MOD]
+        import yaml
+
+        for path in (yaml.safe_load(SILENCED), None):
+            with self.subTest(path=path):
+                text = " ".join(plotcanon.interview_instructions(
+                    "report", "web", mod=mod, path=path).split())
+
+                self.assertIn("**`group`** is only for a Stretch played by one of several "
+                              "Groups the players split into at this Event", text)
