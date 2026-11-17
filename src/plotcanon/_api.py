@@ -426,7 +426,7 @@ def world_settings(source):
     return _settings.read(_files_of(source), _checks.Findings())
 
 
-def last_stop(world, mod, *, before=None, group=None):
+def last_stop(world, mod, *, before=None, group=None, event=None):
     """Where play stopped on a Mod before a report, as a `LastStop`, by the
     rule `load_world` checks a report's `path` by: the end of the Path of the
     last earlier report that ran on the line of play the report follows on
@@ -438,14 +438,17 @@ def last_stop(world, mod, *, before=None, group=None):
     filed. `group` is the Group the report covers, its `group`: where that
     Group stopped, or, for a Group's first report, where the Mod stopped
     before the split. With `before` and no `group`, it is that report's own.
-    With neither, after a split, it is where each Group that had not finished
+    Without `before`, `event` is the Event of the report not yet filed, its
+    id; with None, it is the Event of the Mod's last report. Groups are
+    parallel at one Event, so at a later Event the Groups of the last one
+    have come back together. With neither `before` nor `group`, after a split, it is where each Group that had not finished
     stopped, which a report that brings the Groups back together starts from:
     `LastStop(among=...)` when they stopped at different scenes. Without
     Groups, `group` changes nothing.
 
     Returns `LastStop()` when there is no earlier report, and
     `LastStop(known=False)` when that report has no Path that fits, or the
-    Mod or `before` cannot be found among the World's reports.
+    Mod, `before` or `event` cannot be found among the World's documents.
     """
     from ._path import LastStop
 
@@ -464,4 +467,9 @@ def last_stop(world, mod, *, before=None, group=None):
     if group is not None and not isinstance(group, str):
         raise TypeError(f"a Group is its label, as text, not {type(group).__name__}")
     label = None if group is None else group.strip() or None
-    return _checks.PathReader(docs, by_id).last_stop(found, report, label)
+    ordinal = None
+    if event is not None:
+        ordinal = _checks.ordinal_of(getattr(event, "id", event), by_id)
+        if ordinal is None:
+            return LastStop(known=False)
+    return _checks.PathReader(docs, by_id).last_stop(found, report, label, ordinal)

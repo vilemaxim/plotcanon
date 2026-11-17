@@ -52,7 +52,8 @@ last report on the mod.
   [`group`](#group).
 - **The mod's own `state` is still set by a person.** Filing a report does not
   change it. The validator warns on the mod when its state and its latest
-  report disagree (after a split, its latest report in each Group): the report says the mod is finished and the state does not;
+  report disagree (after a split, its latest report in each Group at its
+  latest event): the report says the mod is finished and the state does not;
   the state says finished and the report says there is more to play; or the
   report says the mod has been run and the state says it has not begun. A
   shelved mod is left alone, whatever its reports say.
@@ -123,29 +124,37 @@ on their own **Group**, and labels it in `group`. The label is theirs to
 choose; it only has to be the same on every report from the same Group. A
 report with no `group` covers the whole mod, as every report did before Groups.
 
-**Each Group has its own line of play.** For one mod, reports with different
-labels ran side by side, and reports with the same label follow each other, by
-event and then id.
+**Groups are parallel at one event.** For one mod at one event, reports with
+different labels ran side by side, and reports with the same label, or none,
+follow each other in id order. Each Group has its own line of play:
 
 - **Its Path** starts where its own last report stopped. A Group's first
   report starts where the whole mod stopped before the players split, or at a
   Hook.
 - **`finished: true`** says the Group has nothing more to play. Nothing may
-  follow it in that Group; a later report with the same label is an error, on
-  both. Two Groups may each finish. **The mod is finished when every Group
-  has**, and the validator compares the mod's `state` with that.
+  follow it in that Group; a later report with the same label at that event
+  is an error, on both. Two Groups may each finish. **The mod is finished
+  when every Group at its latest event has**, and the validator compares the
+  mod's `state` with that.
 - **A later report with no `group` brings the Groups back together.** It
   continues from where the Group that had not finished stopped. If several
   had not, its Path's first step says which: it must be where one of them
-  stopped, or a Hook. If every Group had finished, the mod was finished, and a
-  later report is an error, as above. The next report with a `group` starts a
-  new split, from there.
+  stopped. If every Group had finished, the mod was finished, and a later
+  report is an error, as above. The next report with a `group` starts a new
+  split, from there.
+- **The Groups of one event have come back together by the next.** A split
+  lasts no longer than its event, so the first report at a later event, with
+  a `group` or without one, continues from the Groups that had not finished,
+  as a report with no `group` would. A label used again at a later event names
+  a new Group there: it does not pick up where the Group of that name stopped,
+  and a Group that finished at an earlier event does not stop it.
 
 At the vigil, the party splits. One Group holds the nave and drives the Order
 off; it has nothing more to play:
 
 ```yaml
 id: aa-the-ashen-vigil
+event: e08-harvest-mourn
 group: nave
 finished: true
 path:
@@ -157,10 +166,12 @@ path:
   - Order driven off
 ```
 
-The other goes down to the lower door, and play stops there:
+At the same event, the other goes down to the lower door, and play stops
+there:
 
 ```yaml
 id: aa-the-ashen-vigil-2
+event: e08-harvest-mourn
 group: lower door
 finished: false
 path:
@@ -168,12 +179,14 @@ path:
   - The lower door
 ```
 
-The mod is not finished: the lower door Group has more to play. At the next
-event the party plays on together, in a report with no `group`, from where the
-lower door Group stopped:
+The mod is not finished: the lower door Group has more to play. The mod is
+scheduled again at a later event, `e09-midwinter-vigil`, where the party plays
+on together, in a report with no `group`, from where the lower door Group
+stopped:
 
 ```yaml
 id: aa-the-ashen-vigil-3
+event: e09-midwinter-vigil
 finished: true
 path:
   - The lower door
@@ -183,8 +196,8 @@ path:
 
 **Canon changes from parallel Groups** are still decided in one order, by
 event, report id and place in the report, so the result is always the same.
-But between Groups that played side by side, that order is only a tie-break:
-when two of them change the same field of the same entity (a `status`,
+But between Groups that played side by side, at the same event, that order is
+only a tie-break: when two of them change the same field of the same entity (a `status`,
 `location` or `affiliation` change that is not rejected), the validator warns
 on both reports, so a Plot Master checks which is right.
 

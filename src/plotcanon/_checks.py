@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass, field as dc_field
 from importlib import resources
 from pathlib import PurePosixPath
+from typing import NamedTuple
 
 import yaml
 
@@ -845,56 +846,80 @@ def group_of(report):
     return group.strip() if isinstance(group, str) and group.strip() else None
 
 
+class Placement(NamedTuple):
+    """Where a report with a `group` sits: the split it is in, counted from
+    1 in report order, and its Group's label."""
+
+    split: int
+    group: str
+
+
 class LinesOfPlay:
     """A Mod's reports, read in order, as the lines of play they make.
 
-    Before any split there is one line. A report with a `group` is on that
-    Group's line: its first report branches from the Mod's line as it stood
-    before the split, and each later one with the same label follows the one
-    before it. Reports with different labels ran side by side, in parallel. A
-    report with no `group` after a split brings the Groups back together: it
-    follows every Group that had not finished, or every Group when all had.
-    That ends the split, and the next `group` starts a new one.
+    Before any split there is one line. Groups are parallel at one Event: a
+    report with a `group` is on that Group's line at its Event. Its first
+    report there branches from the Mod's line as it stood before the split,
+    and each later one with the same label follows the one before it. Reports
+    with different labels at one Event ran side by side, in parallel.
+
+    A split ends when the Groups come back together: at a report with no
+    `group`, or at the end of the split's Event. What comes next follows
+    every Group that had not finished, or every Group when all had. So a
+    Group at a later Event, whatever its label, branches from there, and a
+    label used again at a later Event names a new Group.
 
     `follows[rel]` is what each report follows on from: a tuple of reports,
-    or of None for the start of the Mod. `parallel[rel]` is the split and the
-    Group a report is in, or None for a report with no `group`.
+    or of None for the start of the Mod. `parallel[rel]` is the `Placement`
+    of a report with a `group`, or None for a report with none.
     """
 
-    def __init__(self, filed):
-        self.trunk = None       # The last report on the Mod's own line.
-        self.split = {}         # Each Group's last report, by label.
+    def __init__(self, filed, by_id):
+        self.trunk = (None,)    # What the Mod's own line follows on from.
+        self.split = {}         # Each Group's last report at `ordinal`, by label.
+        self.ordinal = None     # The Event of the last report, as its ordinal.
         self.splits = 0
         self.follows, self.parallel = {}, {}
         self.enders, self.enders_before = {}, {}
         for report in filed:
+            ordinal = ordinal_of(report.fm.get("event"), by_id)
             group = group_of(report)
-            self.follows[report.rel] = self.follow(group)
+            self.follows[report.rel] = self.follow(group, ordinal)
             self.read_ends(report)
+            if self.split and ordinal != self.ordinal:
+                self.trunk, self.split = self.joined(), {}
+            self.ordinal = ordinal
             if group is None:
-                self.trunk, self.split = report, {}
+                self.trunk, self.split = (report,), {}
                 self.parallel[report.rel] = None
             else:
                 if not self.split:
                     self.splits += 1
                 self.split[group] = report
-                self.parallel[report.rel] = (self.splits, group)
+                self.parallel[report.rel] = Placement(self.splits, group)
 
-    def follow(self, group):
-        """What a report in `group` (None for none) would follow on from, next."""
-        if group is not None:
-            return (self.split.get(group, self.trunk),)
-        if not self.split:
-            return (self.trunk,)
+    def joined(self):
+        """What follows the open split once its Groups come back together:
+        every Group that had not finished, or every Group when all had."""
         tips = tuple(self.split.values())
-        unfinished = tuple(tip for tip in tips if not self.ended(tip))
-        return unfinished or tips
+        return tuple(tip for tip in tips if not self.ended(tip)) or tips
+
+    def follow(self, group, ordinal=None):
+        """What a report in `group` (None for none) would follow on from,
+        next, at the Event `ordinal` (None for the Event of the last report)."""
+        split = self.split if ordinal is None or ordinal == self.ordinal else {}
+        trunk = self.joined() if self.split and not split else self.trunk
+        if group is not None:
+            return (split[group],) if group in split else trunk
+        return self.joined() if split else trunk
 
     @property
     def tips(self):
-        """The last report on each line still open after the last report."""
-        return tuple(self.split.values()) if self.split else \
-            (() if self.trunk is None else (self.trunk,))
+        """The last report on each line still open after the last report: on
+        each Group at the Mod's latest Event, when it ended split."""
+        if self.split:
+            return tuple(self.split.values())
+        return tuple(report for report in self.trunk if report is not None)
 
     def ended(self, report):
         """The reports that finished the line `report` is on, by the time of
@@ -940,7 +965,7 @@ def check_finished(docs, by_id, vocab, f):
     unfinished = vocab["mod_states_unfinished"]
     has_run = vocab["mod_states_that_have_run"]
     for mod_id, filed in sorted(reports_by_mod(docs, by_id).items()):
-        lines = LinesOfPlay(filed)
+        lines = LinesOfPlay(filed, by_id)
         for report in filed:
             enders = lines.ended_before(report)
             if not enders:
@@ -995,7 +1020,7 @@ def check_parallel_changes(docs, by_id, vocab, f):
     moving = set(vocab["vocabularies"]["canon_change_decision"]) \
         - set(vocab["canon_change_decisions_raising_no_flag"])
     for _mod_id, filed in sorted(reports_by_mod(docs, by_id).items()):
-        lines = LinesOfPlay(filed)
+        lines = LinesOfPlay(filed, by_id)
         changing = {}   # (split, entity, field) -> {report rel: (report, group, index)}
         for report in filed:
             placed = lines.parallel[report.rel]
@@ -1352,31 +1377,33 @@ class PathReader:
 
     def lines(self, mod):
         if mod.id not in self.lined:
-            self.lined[mod.id] = LinesOfPlay(self.ordered.get(mod.id, []))
+            self.lined[mod.id] = LinesOfPlay(self.ordered.get(mod.id, []), self.by_id)
         return self.lined[mod.id]
 
-    def last_stop(self, mod, before=None, group=None):
+    def last_stop(self, mod, before=None, group=None, ordinal=None):
         """Where play stopped on `mod` before the report `before`, or after
         its last report when `before` is None, as a `LastStop`, for a report
         in `group`. With `before`, `group` is that report's own when None.
+        Without `before`, `ordinal` is the Event of the report to come, as
+        its ordinal, or None for the Event of the Mod's last report.
 
-        It is where the line of play the report follows on from stopped (see
-        `LinesOfPlay`): the end of the Path of its last report that ran; no
-        earlier report; or not known, when that report has no Path that fits,
-        or `before` has no place in the order. A report with no `group` after
-        a split follows several Groups, and may start where any of them
-        stopped."""
+        It is where the lines of play the report follows on from stopped (see
+        `LinesOfPlay`): the end of the Path of the last report on each that
+        ran; no earlier report; or not known, when that report has no Path
+        that fits, or `before` has no place in the order. A report that
+        follows several Groups may start where any of them stopped."""
         from ._path import LastStop
 
         filed = self.ordered.get(mod.id, [])
         if before is None:
-            follows = self.lines(mod).follow(group)
+            follows = self.lines(mod).follow(group, ordinal)
         elif before not in filed:
             return LastStop(known=False)
         elif group is None or group == group_of(before):
             follows = self.lines(mod).follows[before.rel]
         else:
-            follows = LinesOfPlay(filed[:filed.index(before)]).follow(group)
+            follows = LinesOfPlay(filed[:filed.index(before)], self.by_id).follow(
+                group, ordinal_of(before.fm.get("event"), self.by_id))
         return self.stop_after(mod, follows)
 
     def stop_after(self, mod, reports):

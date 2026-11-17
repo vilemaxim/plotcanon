@@ -3,12 +3,14 @@ Mod Runner files a report that says which Group it covers in `group`, and
 `finished`, Paths and where play stopped follow each Group (ADR-0011 in RPG
 Plot Helper). The sample World's `the-bell-beneath` is the Mod split."""
 
+import re
 import unittest
 
 import plotcanon
 
 MOD = "mods/lanternlight/the-bell-beneath.md"
-AT = "after-actions/e04-second-lantern/"
+E02, E04 = "e02-first-lantern", "e04-second-lantern"
+AT = f"after-actions/{E04}/"
 
 SILENCED = """\
   - hook: The sister asks them to close what was opened
@@ -30,15 +32,16 @@ AT_WHO_RINGS = """\
 """
 
 
-def rel(n):
-    return f"{AT}{report_id(n)}.md"
+def rel(n, event=E04):
+    return f"after-actions/{event}/{report_id(n)}.md"
 
 
 def report_id(n):
     return "aa-the-bell-beneath" if n == 1 else f"aa-the-bell-beneath-{n}"
 
 
-def report(n, path=SILENCED, *, group=None, finished="true", ran="true", changes=""):
+def report(n, path=SILENCED, *, group=None, finished="true", ran="true", changes="",
+           event=E04):
     """The text of the `n`th report on the Mod, by its id."""
     path_field = "" if path is None else f"path:\n{path}"
     group_field = "" if group is None else f"group: {group}\n"
@@ -47,7 +50,7 @@ def report(n, path=SILENCED, *, group=None, finished="true", ran="true", changes
 id: {report_id(n)}
 type: after-action
 mod: the-bell-beneath
-event: e04-second-lantern
+event: {event}
 {group_field}ran: {ran}
 finished: {finished}
 mod_runner: sam
@@ -63,18 +66,23 @@ pcs: {"[]" if ran == "false" else "[pc-bram-tolliver]"}
 """
 
 
+def placed(n, text):
+    """Where the `n`th report sits, by the Event its text names."""
+    return rel(n, re.search(r"^event: (.*)$", text, re.M).group(1))
+
+
 def loaded(*reports, changed=None):
     """`load_world` on the sample World with these `(n, text)` reports."""
     files = {**plotcanon.sample_world(), **(changed or {})}
     for n, text in reports:
-        files[rel(n)] = text
+        files[placed(n, text)] = text
     return plotcanon.load_world(files)
 
 
 def findings(*reports, on=None, changed=None):
     """The errors and warnings on the reports given, or on the paths `on`."""
     result = loaded(*reports, changed=changed)
-    paths = on or {rel(n) for n, _text in reports}
+    paths = on or {placed(n, text) for n, text in reports}
     return ([f"{f.path}: {f.message}" for f in result.errors if f.path in paths],
             [f"{f.path}: {f.message}" for f in result.warnings if f.path in paths])
 
@@ -400,6 +408,12 @@ class TheSchemaDoc(unittest.TestCase):
         self.assertFalse(plotcanon.check_path(self.story, together["path"],
                                               continues_from=nave.end.name).ok)
 
+    def test_its_example_splits_at_one_event_and_comes_back_together_at_a_later_one(self):
+        finishing, stopping, together = self.reports
+
+        self.assertEqual(finishing["event"], stopping["event"])
+        self.assertNotEqual(together["event"], stopping["event"])
+
 
 class AModWithManyReports(unittest.TestCase):
     """Reading a Mod's lines of play takes one pass over its reports, so a
@@ -418,3 +432,82 @@ class AModWithManyReports(unittest.TestCase):
         reports += [(1001, report(1001, FROM_THE_BELL))]
 
         self.assertEqual(list(loaded(*reports).errors), [])
+
+
+AT_TWO_EVENTS = {MOD: plotcanon.sample_world()[MOD].replace(
+    "events: [e04-second-lantern]", f"events: [{E02}, {E04}]")}
+
+
+def at_two(*reports, on=None):
+    """`findings` on the Mod run at two Events, `E02` and then `E04`."""
+    return findings(*reports, on=on, changed=AT_TWO_EVENTS)
+
+
+class GroupsAtMoreThanOneEvent(unittest.TestCase):
+    """Groups are parallel at one Event. At a later Event, the Groups of the
+    last one have come back together: a Group there, whatever its label,
+    starts where the Mod stood at the end of the last Event."""
+
+    def split_at_e02(self, cellar=AT_THE_BELL, cellar_finished="false"):
+        return ((1, report(1, cellar, group="cellar", finished=cellar_finished, event=E02)),
+                (2, report(2, AT_WHO_RINGS, group="belfry", finished="false", event=E02)))
+
+    def test_with_no_groups_reports_at_two_events_read_as_before(self):
+        self.assertEqual(at_two((1, report(1, AT_THE_BELL, finished="false", event=E02)),
+                                (2, report(2, FROM_THE_BELL))), ([], []))
+
+    def test_a_group_at_a_later_event_starts_where_the_mod_stood_at_the_end_of_the_last(self):
+        self.assertEqual(at_two((1, report(1, AT_THE_BELL, group="cellar", finished="false",
+                                           event=E02)),
+                                (2, report(2, FROM_THE_BELL, group="belfry"))), ([], []))
+
+    def test_after_two_groups_stopped_a_group_at_a_later_event_starts_where_either_did(self):
+        for path in (FROM_THE_BELL, FROM_WHO_RINGS):
+            with self.subTest(path=path):
+                self.assertEqual(at_two(*self.split_at_e02(),
+                                        (3, report(3, path, group="nave"))), ([], []))
+
+    def test_a_label_at_a_later_event_is_a_new_group(self):
+        self.assertEqual(at_two(*self.split_at_e02(SILENCED, "true"),
+                                (3, report(3, FROM_WHO_RINGS, group="cellar"))), ([], []))
+
+    def test_groups_at_different_events_did_not_play_side_by_side(self):
+        self.assertEqual(at_two(
+            (1, report(1, AT_THE_BELL, group="cellar", finished="false", event=E02,
+                       changes=status_change("missing"))),
+            (2, report(2, FROM_THE_BELL, group="belfry", changes=status_change("dead")))),
+            ([], []))
+
+    def test_after_every_group_at_an_event_finished_a_later_group_is_an_error(self):
+        errors, _ = at_two((1, report(1, group="cellar", event=E02)),
+                           (2, report(2, group="belfry", event=E02)),
+                           (3, report(3, group="cellar")))
+
+        self.assertIn(f"{rel(3)}: mod `the-bell-beneath` was finished by `aa-the-bell-beneath` "
+                      "and `aa-the-bell-beneath-2` — a finished mod cannot be reported on "
+                      "again. If there was more to play, one of them should say "
+                      "`finished: false`", errors)
+
+    def test_the_mod_is_finished_when_every_group_at_its_latest_event_finished(self):
+        _, warnings = at_two(*self.split_at_e02(),
+                             (3, report(3, FROM_WHO_RINGS, group="nave")),
+                             (4, report(4, FROM_THE_BELL, group="crypt")), on={MOD})
+
+        self.assertEqual(warnings, [
+            f"{MOD}: `state: approved`, but its latest reports, one for each Group "
+            "(`aa-the-bell-beneath-3` and `aa-the-bell-beneath-4`), say the mod is finished "
+            "— set the state to match, or correct the reports"])
+
+    def test_where_a_group_at_a_later_event_starts(self):
+        files = {**plotcanon.sample_world(), **AT_TWO_EVENTS}
+        for n, text in self.split_at_e02():
+            files[placed(n, text)] = text
+
+        self.assertEqual(plotcanon.last_stop(files, "the-bell-beneath", group="cellar"),
+                         plotcanon.LastStop("The bell"))
+        self.assertEqual(plotcanon.last_stop(files, "the-bell-beneath", group="cellar",
+                                             event=E04),
+                         plotcanon.LastStop(among=("The bell", "Who rings it")))
+        self.assertEqual(plotcanon.last_stop(files, "the-bell-beneath", group="cellar",
+                                             event=E02),
+                         plotcanon.LastStop("The bell"))
