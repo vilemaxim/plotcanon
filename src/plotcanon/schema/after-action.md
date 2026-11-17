@@ -7,7 +7,9 @@ proposed **canon changes**.
 **One is filed every time play stops**, so a mod can have several: one per
 event it ran at, and more than one at the same event if it was interrupted and
 picked up again. Each names the one event it covers, and that event must be in
-the mod's `events` list.
+the mod's `events` list. When a mod splits its players into **Groups** that
+play side by side, each Group's Mod Runner files their own report, and says
+which Group it covers in `group`.
 
 Ids are unique repo-wide and equal to the filename stem, and the bare mod id
 already belongs to the mod. The first report on a mod is `aa-<mod-id>`; later
@@ -28,7 +30,8 @@ two payoffs.
 | `mod` | ● | id | The mod this reports on. |
 | `event` | ● | event-id | The event this stretch of play happened at. Must be in the mod's `events`. |
 | `ran` | ● | bool | `false` = scheduled but did not happen. Record it anyway; a mod that did not run is information. |
-| `finished` | ● | bool | `true` if the mod has nothing left to play after this stretch; `false` if play stopped with more to come. See below. |
+| `group` | ○ | text | The Group this stretch of play covers, when the mod's players split up to play side by side. A short label the Mod Runner chooses, on one line, of at most 60 characters. See below. |
+| `finished` | ● | bool | `true` if the mod, or this report's Group, has nothing left to play after this stretch; `false` if play stopped with more to come. See below. |
 | `path` | ○ | list | The way this stretch of play went through the mod's Dry Run, ending where play stopped. See below. |
 | `mod_runner` | ● | text | Who ran this stretch of the mod and is reporting on it. |
 | `pcs` | ● | id[] | The PCs who took part. Empty list if `ran: false`. The roster stays authoritative — this is presence at this mod, not a roster edit. |
@@ -45,9 +48,11 @@ last report on the mod.
   mod is an error, reported on both: either could be the one that is wrong.
   If more was played after all, the earlier report was not the end, and
   should say `finished: false`. Reports are read in order of event, then id.
+  When the mod has split into Groups, this holds for each Group: see
+  [`group`](#group).
 - **The mod's own `state` is still set by a person.** Filing a report does not
   change it. The validator warns on the mod when its state and its latest
-  report disagree: the report says the mod is finished and the state does not;
+  report disagree (after a split, its latest report in each Group): the report says the mod is finished and the state does not;
   the state says finished and the report says there is more to play; or the
   report says the mod has been run and the state says it has not begun. A
   shelved mod is left alone, whatever its reports say.
@@ -102,12 +107,86 @@ from it:
   Hook's link or a Contest's result; a result the Contest does not have; a
   first step that is neither a Hook nor where the last report's Path stopped;
   a Path that ends at a Hook or a Contest. The report before is the last one
-  on the same mod that ran, by event and then id. If that report has no Path,
-  or one that does not fit, where it stopped is not known, and the Path may
-  start at any scene.
+  on the same mod that ran, by event and then id, on the same line of play:
+  after a split, in the same Group (see [`group`](#group)). If that report
+  has no Path, or one that does not fit, where it stopped is not known, and
+  the Path may start at any scene.
 - **Warnings**: a Path that ends at an ending under `## Possible Outcomes` on a
   report that says `finished: false`, or at a scene on one that says
   `finished: true`; a Path on a mod with no Dry Run, which cannot be checked.
+
+## `group`
+
+Sometimes a mod splits its players: some hold the nave while others go down to
+the lower door, each with their own Mod Runner. Each Mod Runner files a report
+on their own **Group**, and labels it in `group`. The label is theirs to
+choose; it only has to be the same on every report from the same Group. A
+report with no `group` covers the whole mod, as every report did before Groups.
+
+**Each Group has its own line of play.** For one mod, reports with different
+labels ran side by side, and reports with the same label follow each other, by
+event and then id.
+
+- **Its Path** starts where its own last report stopped. A Group's first
+  report starts where the whole mod stopped before the players split, or at a
+  Hook.
+- **`finished: true`** says the Group has nothing more to play. Nothing may
+  follow it in that Group; a later report with the same label is an error, on
+  both. Two Groups may each finish. **The mod is finished when every Group
+  has**, and the validator compares the mod's `state` with that.
+- **A later report with no `group` brings the Groups back together.** It
+  continues from where the Group that had not finished stopped. If several
+  had not, its Path's first step says which: it must be where one of them
+  stopped, or a Hook. If every Group had finished, the mod was finished, and a
+  later report is an error, as above. The next report with a `group` starts a
+  new split, from there.
+
+At the vigil, the party splits. One Group holds the nave and drives the Order
+off; it has nothing more to play:
+
+```yaml
+id: aa-the-ashen-vigil
+group: nave
+finished: true
+path:
+  - hook: Oleen asks the party directly, through anyone who has done her a favour
+  - The vigil itself
+  - The Order comes through
+  - contest: fight the Order
+    result: win
+  - Order driven off
+```
+
+The other goes down to the lower door, and play stops there:
+
+```yaml
+id: aa-the-ashen-vigil-2
+group: lower door
+finished: false
+path:
+  - hook: Anyone watching the Order's movements can see the chapel is the target
+  - The lower door
+```
+
+The mod is not finished: the lower door Group has more to play. At the next
+event the party plays on together, in a report with no `group`, from where the
+lower door Group stopped:
+
+```yaml
+id: aa-the-ashen-vigil-3
+finished: true
+path:
+  - The lower door
+  - The Order comes through
+  - Register taken
+```
+
+**Canon changes from parallel Groups** are still decided in one order, by
+event, report id and place in the report, so the result is always the same.
+But between Groups that played side by side, that order is only a tie-break:
+when two of them change the same field of the same entity (a `status`,
+`location` or `affiliation` change that is not rejected), the validator warns
+on both reports, so a Plot Master checks which is right.
 
 ## `canon_changes`
 

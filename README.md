@@ -87,7 +87,7 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `story(mod)` | A Mod's story by the Dry Run convention, as a `Story`: its start, passages, exits, Contests and endings, and why a Dry Run cannot be built from it, if it cannot. Takes a Mod's `Document` or its text. |
 | `path_steps(story, choices, *, continues_from=None, start=None)` | The steps of a Path, as a report's `path` holds them, from the choices taken in a walk through a Dry Run. See [Paths](#paths). |
 | `check_path(story, steps, *, continues_from=None)` | A report's `path` read against its Mod's story, as a `Path`: where play stopped, whether that finishes the Mod, and what does not fit. |
-| `last_stop(world, mod, *, before=None)` | Where play stopped on a Mod before a report, or after its last one, as a `LastStop`, by the rule `load_world` checks a Path by. |
+| `last_stop(world, mod, *, before=None, group=None)` | Where play stopped on a Mod before a report, or after its last one, as a `LastStop`, by the rule `load_world` checks a Path by. With `group`, where that Group stopped. |
 | `to_twee(text)` | A Mod's file as a Twee 3 story, to open in Twine. |
 | `from_twine(source)` | A Twee file or a Twine 2 `.html` file (archive or published) back into a Mod's markdown, as `FromTwine`: the `markdown`, `warnings` about what does nothing in a Dry Run, and `problems` if the file could not be read. Takes text or bytes. |
 | `world_settings(source)` | A World's settings from its `world.yml`, as `WorldSettings`. `world.settings` gives the same for a loaded World. |
@@ -216,11 +216,21 @@ walked.finished    # True when that is an ending: it proposes `finished: true`
 walked.problems    # what does not fit, one sentence each
 ```
 
-- **`LastStop`** is one of three: `LastStop()`, no earlier report, so a Path starts at a Hook; `LastStop("The bell")`, where the last report's Path stopped; `LastStop(known=False)`, an earlier report with no Path that fits, so a Path may start at any scene. Where `continues_from` is taken, a scene's name or None stands for the first two.
-- **`last_stop(world, mod, *, before=None)`** looks at the last earlier report on the Mod that ran, by event and then id. `before` is a report's id or `Document`; with None, it is after the Mod's last report.
+- **`LastStop`** is one of four: `LastStop()`, no earlier report, so a Path starts at a Hook; `LastStop("The bell")`, where the last report's Path stopped; `LastStop(known=False)`, an earlier report with no Path that fits, so a Path may start at any scene; `LastStop(among=("The bell", "Who rings it"))`, where each Group that had not finished stopped, for a report that brings them back together. `stop.passages` lists the scenes a Path may start at besides a Hook. Where `continues_from` is taken, a scene's name or None stands for the first two.
+- **`last_stop(world, mod, *, before=None, group=None)`** looks at the last earlier report that ran on the line of play the report follows on from, by event and then id. `before` is a report's id or `Document`; with None, it is after the Mod's last report. `group` is the report's `group`; with `before` and no `group`, it is that report's own.
 - **`choices`** are `Exit`s, each from the `choices` of the passage the walk has reached. From the Premise the first is a Hook; with `start`, the walk starts at that scene, which `continues_from` must allow. A Contest's result is written as the Contest and the result, and every step a Hook or a result leads to is written after it, so the last step is where play stopped. A choice that is not a way on, or a `start` the walk may not take, raises `ValueError`.
 
 `load_world` and `check_file` check a report's `path` against its Mod when a Dry Run can be built from the Mod. A step that names nothing the Mod has, cannot be reached from the step before, or takes a result its Contest does not have is an error. A Path that ends at an ending on a report that says `finished: false`, or at a scene on one that says `finished: true`, is a warning, and so is a `path` on a Mod with no Dry Run. A report without `path` is not checked.
+
+### Groups
+
+When a Mod splits its players into Groups that play side by side, each Group's report says which it covers in `group`, a short label. Each Group has its own line of play: its Path starts where its own last report stopped, and its first report where the whole Mod stopped before the split. Nothing may follow a report that says `finished: true` within its Group, and the Mod is finished when every Group is. A later report with no `group` brings the Groups back together and starts where one of the Groups that had not finished stopped. Two Groups that change the same field of the same entity are warned about, on both reports; their changes are still decided by event, report id and place in the report. The rules are in [`schema/after-action.md`](src/plotcanon/schema/after-action.md#group).
+
+```python
+stop = plotcanon.last_stop(world, mod.id, group="lower door")   # that Group's next report
+stop = plotcanon.last_stop(world, mod.id)          # after a split: LastStop(among=...)
+stop.passages                                      # the scenes it may start at
+```
 
 ## Twine
 

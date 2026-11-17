@@ -362,3 +362,40 @@ class ChangesInParallel(unittest.TestCase):
                                                   f"{status_change('dead', 'rejected')}")),
             (2, report(2, group="belfry", changes=f"{NARRATIVE}, {status_change('missing')}"))),
             ([], []))
+
+
+class TheSchemaDoc(unittest.TestCase):
+    """`schema/after-action.md` describes `group`, with an example of two
+    Groups at one Event, one finishing and one stopping, and a later report
+    with no `group` that brings them back together."""
+
+    @classmethod
+    def setUpClass(cls):
+        import re
+
+        import yaml
+
+        mod = plotcanon.schema_files()["mod.md"]
+        start = mod.index("```markdown\n") + len("```markdown\n")
+        cls.story = plotcanon.story(mod[start:mod.rindex("```")])
+        cls.doc = plotcanon.schema_files()["after-action.md"]
+        section = cls.doc[cls.doc.index("## `group`"):cls.doc.index("## `canon_changes`")]
+        cls.reports = [yaml.safe_load(b) for b in re.findall(r"```yaml\n(.*?)```", section, re.S)]
+
+    def test_it_describes_the_field(self):
+        self.assertIn("| `group` | ○ |", self.doc)
+
+    def test_its_example_splits_and_comes_back_together(self):
+        finishing, stopping, together = self.reports
+        nave = plotcanon.check_path(self.story, finishing["path"])
+        door = plotcanon.check_path(self.story, stopping["path"])
+        later = plotcanon.check_path(self.story, together["path"],
+                                     continues_from=door.end.name)
+
+        self.assertNotEqual(finishing["group"], stopping["group"])
+        self.assertEqual((finishing["finished"], nave.finished), (True, True))
+        self.assertEqual((stopping["finished"], door.finished), (False, False))
+        self.assertNotIn("group", together)
+        self.assertEqual(later.problems, ())
+        self.assertFalse(plotcanon.check_path(self.story, together["path"],
+                                              continues_from=nave.end.name).ok)
