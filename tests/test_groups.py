@@ -295,3 +295,20 @@ class AReportInterviewThatBringsGroupsBackTogether(unittest.TestCase):
 
                 self.assertIn("play stopped at `The bell` for one Group and at `Who rings it` "
                               "for another", text)
+
+
+class TheGroupField(unittest.TestCase):
+    def test_a_group_is_a_short_label(self):
+        for value in ("2", "[cellar]", "{a: b}", "''", "' '", "\"two\\nlines\"", "x" * 61):
+            with self.subTest(value):
+                errors, _ = findings((1, report(1, group=value)))
+
+                self.assertEqual(errors, [f"{rel(1)}: `group` must be a short label, as text "
+                                          "on one line of at most 60 characters"])
+
+    def test_a_report_with_a_misshapen_group_is_read_as_having_none(self):
+        errors, _ = findings((1, report(1, AT_THE_BELL, group="[cellar]", finished="false")),
+                             (2, report(2, FROM_THE_BELL)))
+
+        self.assertEqual(errors, [f"{rel(1)}: `group` must be a short label, as text on one "
+                                  "line of at most 60 characters"])

@@ -245,6 +245,7 @@ MAX_NESTING = 20
 MAX_ID_CHARACTERS = 200
 MAX_ALIAS_CHARACTERS = 200
 MAX_ALIASES = 100
+MAX_GROUP_CHARACTERS = 60
 
 # A whole number wider than this many bits is not a count, an order or a date.
 # Python cannot even print a number of a few thousand digits.
@@ -377,6 +378,14 @@ def well_shaped(rel, fm, typ, f):
     elif isinstance(fm.get("id"), str) and len(fm["id"]) > MAX_ID_CHARACTERS:
         wrong("id", f"`id` is longer than {MAX_ID_CHARACTERS} characters")
         fm["id"] = None
+
+    group = fm.get("group") if typ == "after-action" else None
+    if group is not None and (not isinstance(group, str) or not group.strip()
+                              or "\n" in group.strip()
+                              or len(group.strip()) > MAX_GROUP_CHARACTERS):
+        wrong("group", f"`group` must be a short label, as text on one line of at most "
+                       f"{MAX_GROUP_CHARACTERS} characters")
+        fm["group"] = None
 
     def id_list(field, where, listed):
         """A list of ids. Anything in it that is not one is reported and left out."""
