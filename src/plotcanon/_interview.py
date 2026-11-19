@@ -478,7 +478,8 @@ ask.
 
 
 def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="",
-                           flags=(), mod=None, path=None, continues_from=None, event=None):
+                           flags=(), mod=None, path=None, continues_from=None, event=None,
+                           group=None):
     """The instructions for an Interview, as one text to give an LLM as its
     system prompt.
 
@@ -504,23 +505,28 @@ def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_r
     none. `continues_from` is where play stopped before this report, as
     `check_path` takes it: a `LastStop` (see `last_stop`), a scene's name, or
     None when there is no earlier report. `event` is the id of the Event the
-    Stretch was played at, or None for the LLM to ask. With `world`, the
-    report's `id` is worked out from the reports in it.
+    Stretch was played at, or None for the LLM to ask. `group` is the label
+    of the Group the report is for, when the players split into Groups
+    (ADR-0011 in RPG Plot Helper); "" when it covers the whole Mod, so the
+    LLM leaves `group` out; or None for the LLM to ask whether they split.
+    With `world`, the report's `id` is worked out from the reports in it.
 
     Each kind takes only its own of these. Raises ValueError for an unknown
     kind or surface; a "revise-mod" with no draft or a draft with no `id`; a
     "report" with no Mod, a Mod with no `id`, or a Path that does not fit the
     Mod's Dry Run from `continues_from`; and any of these given to a kind
-    that does not take it. Raises TypeError for a draft, a Mod or an `event`
-    that is not text, or a `continues_from` that is none of the three.
+    that does not take it; and a `group` that is not a label on one line of
+    at most `MAX_GROUP_CHARACTERS`. Raises TypeError for a draft, a Mod, an
+    `event` or a `group` that is not text, or a `continues_from` that is none
+    of the three.
     """
     if kind not in KINDS:
         raise ValueError(f"an Interview's kind is one of {', '.join(KINDS)}, not {kind!r}")
     check_surface(surface, "an Interview")
     if kind != "report" and any(value is not None
-                                for value in (mod, path, continues_from, event)):
+                                for value in (mod, path, continues_from, event, group)):
         raise ValueError("only a report Interview takes a Mod, a Path, where the last "
-                         "Stretch stopped or an Event")
+                         "Stretch stopped, an Event or a Group")
     if kind == "report":
         if draft is not None or sent_back_reason or flags:
             raise ValueError("a report has no draft, send-back reason or Flags")
@@ -528,7 +534,8 @@ def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_r
             raise ValueError("a report Interview needs the Mod it reports on")
         if event is not None and not isinstance(event, str):
             raise TypeError("an Event is given by its id, as text")
-        return _report(surface, mod, path, as_last_stop(continues_from), event, world)
+        return _report(surface, mod, path, as_last_stop(continues_from), event,
+                       _group_given(group), world)
     if kind == "revise-mod":
         if draft is None:
             raise ValueError("revising a Mod needs its draft")
@@ -626,6 +633,15 @@ GROUP_RULE = """\
   this Event. `finished` then says whether my Group has anything left to play.
   Otherwise leave `group` out, and the report covers the whole Mod. If you do
   not know whether the players split, ask me.
+"""
+GROUP_GIVEN = """\
+- **`group`** is `{group}`. The players split into Groups at this Event, side
+  by side, each with its own Mod Runner, and this report is for my Group,
+  `{group}`. Keep `group: {group}` exactly as it is. `finished` says whether my
+  Group has anything left to play.
+"""
+GROUP_NONE = """\
+- Leave out `group`: this report covers the whole Mod.
 """
 PATH_RULE = """\
 - **`path`** is the Path, copied exactly as it is given at the end of these
@@ -871,7 +887,20 @@ def _report_id(mod_id, world):
     return report_id
 
 
-def _report(surface, mod, path, stop, event, world):
+def _group_given(group):
+    """`group` as `_report` takes it: a label, "" for none, or None to ask."""
+    if group is None:
+        return None
+    if not isinstance(group, str):
+        raise TypeError("a Group is given by its label, as text")
+    label = _checks.group_label(group) or ""
+    if "\n" in label or len(label) > _checks.MAX_GROUP_CHARACTERS:
+        raise ValueError(f"a Group's label is on one line, of at most "
+                         f"{_checks.MAX_GROUP_CHARACTERS} characters")
+    return label
+
+
+def _report(surface, mod, path, stop, event, group, world):
     """The instructions for a report Interview."""
     made = _report_parts(mod, path, stop)
     readable = None if world is None else world_section(world, WORLD_INTRO)
@@ -893,7 +922,8 @@ def _report(surface, mod, path, stop, event, world):
         EVENT_ASKED if event is None else EVENT_GIVEN.format(event=event),
         RAN_WALKED if made.walked else RAN_ASKED,
         FINISHED_RULE,
-        GROUP_RULE,
+        GROUP_RULE if group is None else
+        GROUP_GIVEN.format(group=group) if group else GROUP_NONE,
         PATH_RULE if made.walked else NO_PATH_RULE,
     ])
     parts = [
@@ -902,7 +932,8 @@ def _report(surface, mod, path, stop, event, world):
             id_line=id_line,
             mod_id=made.mod_id,
             event_line=("event: <the id of the Event this Stretch was played at>"
-                        if event is None else f"event: {event}"),
+                        if event is None else f"event: {event}")
+                       + (f"\ngroup: {group}" if group else ""),
             ran_line="ran: true" if made.walked else "ran: <true or false>",
             path_line="path: <the Path, exactly as given below>\n" if made.walked else "",
             rules=rules),

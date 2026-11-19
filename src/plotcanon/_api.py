@@ -25,12 +25,15 @@ class Finding:
     """One problem with one file.
 
     `message` names the field and says what is wrong with it. An error means the
-    file is not valid; a warning is for a person to judge.
+    file is not valid; a warning is for a person to judge. `code` names a kind
+    of finding a caller may look for without reading its wording, such as
+    `PARALLEL_GROUPS_CLASH`; most have none.
     """
 
     severity: str
     path: str
     message: str
+    code: str | None = None
 
     def __str__(self):
         label = "ERROR " if self.severity == ERROR else "WARN  "
@@ -186,10 +189,19 @@ def _checked(files, head=None, dry_run_structure=None):
         return [], {}, raw
 
 
+def group_of(document):
+    """The Group an After-Action Report covers, its `group` read as
+    `group_label` reads it, or None when it has none, or `document` is not a
+    report. A report with no Group covers the whole Mod."""
+    if document.type != "after-action":
+        return None
+    return _checks.group_label(document.fields.get("group"))
+
+
 def _findings(raw, only=None):
     errors = tuple(Finding(ERROR, path, msg) for path, msg in raw.errors
                    if only is None or path in (only, THE_WORLD))
-    warnings = tuple(Finding(WARNING, path, msg) for path, msg in raw.warnings
+    warnings = tuple(Finding(WARNING, path, msg, code) for path, msg, code in raw.warnings
                      if only is None or path == only)
     return errors, warnings
 

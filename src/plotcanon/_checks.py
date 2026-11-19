@@ -209,8 +209,8 @@ class Findings:
     def error(self, rel, msg):
         self.errors.append((rel, msg))
 
-    def warn(self, rel, msg):
-        self.warnings.append((rel, msg))
+    def warn(self, rel, msg, code=None):
+        self.warnings.append((rel, msg, code))
 
 
 FM_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?(.*)\Z", re.S)
@@ -251,6 +251,10 @@ MAX_ID_CHARACTERS = 200
 MAX_ALIAS_CHARACTERS = 200
 MAX_ALIASES = 100
 MAX_GROUP_CHARACTERS = 60
+# The `code` of the warning that two Groups that played side by side change
+# the same field of the same entity, so a caller can find it without its
+# wording.
+PARALLEL_GROUPS_CLASH = "parallel-groups-clash"
 
 # A whole number wider than this many bits is not a count, an order or a date.
 # Python cannot even print a number of a few thousand digits.
@@ -841,7 +845,8 @@ def reports_by_mod(docs, by_id):
 
 def group_label(value):
     """A `group` as the label of a Group: its text stripped, or None when it
-    is not text or is blank, which is no Group."""
+    is not text or is blank, which is no Group. A label that is valid in a
+    file is also on one line and at most `MAX_GROUP_CHARACTERS` long."""
     return (value.strip() or None) if isinstance(value, str) else None
 
 
@@ -1073,7 +1078,8 @@ def check_parallel_changes(docs, by_id, vocab, f):
                 f.warn(this.report.rel,
                        f"`canon_changes[{this.index}]` changes `{field}` of `{entity}`, as "
                        f"{listed}, which played alongside this one — they are "
-                       f"decided in order of report id, so check that they agree")
+                       f"decided in order of report id, so check that they agree",
+                       code=PARALLEL_GROUPS_CLASH)
 
 
 def collect_changes(docs, by_id, vocab, f):

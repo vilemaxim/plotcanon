@@ -88,13 +88,15 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `path_steps(story, choices, *, continues_from=None, start=None)` | The steps of a Path, as a report's `path` holds them, from the choices taken in a walk through a Dry Run. See [Paths](#paths). |
 | `check_path(story, steps, *, continues_from=None)` | A report's `path` read against its Mod's story, as a `Path`: where play stopped, whether that finishes the Mod, and what does not fit. |
 | `last_stop(world, mod, *, before=None, group=None, event=None)` | Where play stopped on a Mod before a report, or after its last one, as a `LastStop`, by the rule `load_world` checks a Path by. With `group`, where that Group stopped; with `event`, for a report at that Event. |
+| `group_of(document)` | The Group an After-Action Report covers, its `group` stripped, or None when it has none or the document is not a report. |
+| `group_label(value)` | A `group` value as a Group's label: its text stripped, or None when it is blank or not text. A valid label is on one line and at most `MAX_GROUP_CHARACTERS` (60) long. |
 | `to_twee(text)` | A Mod's file as a Twee 3 story, to open in Twine. |
 | `from_twine(source)` | A Twee file or a Twine 2 `.html` file (archive or published) back into a Mod's markdown, as `FromTwine`: the `markdown`, `warnings` about what does nothing in a Dry Run, and `problems` if the file could not be read. Takes text or bytes. |
 | `world_settings(source)` | A World's settings from its `world.yml`, as `WorldSettings`. `world.settings` gives the same for a loaded World. |
 | `sample_world()` | A ready-made World, as `{path: text}`. |
 | `sample_script()` | Reports to submit to the sample World, each with the Mods it should flag. |
 | `vocabularies()` | The allowed values for every enum field. |
-| `interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="", flags=(), mod=None, path=None, continues_from=None, event=None)` | The instructions for an Interview, as one text to give an LLM as its system prompt. `kind` is `"new-mod"`, `"revise-mod"` or `"report"`; `surface` is `"cli"` or `"web"`. See [Interviews](#interviews). |
+| `interview_instructions(kind, surface, *, world=None, draft=None, sent_back_reason="", flags=(), mod=None, path=None, continues_from=None, event=None, group=None)` | The instructions for an Interview, as one text to give an LLM as its system prompt. `kind` is `"new-mod"`, `"revise-mod"` or `"report"`; `surface` is `"cli"` or `"web"`. See [Interviews](#interviews). |
 | `interview_fix_request(errors)` | The message an app sends its LLM, in a `"web"` Interview, when the Mod file the LLM gave has errors: from the app, not the person, who has not seen the file yet, asking for the whole file again in one code block. `errors` is text the caller has already cut down to what the person may read. |
 | `interview_revise_opener()` | The first message an app sends its LLM, on the person's behalf, to open a `"revise-mod"` Interview, so the LLM speaks first, beginning with the send-back reason and each Flag. |
 | `interview_report_opener(path=None)` | The same for a `"report"` Interview: it begins with the Path, or with no Path asks the Mod Runner to say in words what happened and where play stopped. |
@@ -233,6 +235,8 @@ stop = plotcanon.last_stop(world, mod.id)          # after a split: LastStop(amo
 stop.passages                                      # the scenes it may start at
 ```
 
+The warning about two Groups changing the same field has the `code` `PARALLEL_GROUPS_CLASH`, so an app can find it without its wording: `[w for w in report.warnings if w.code == plotcanon.PARALLEL_GROUPS_CLASH]`. Other findings have no `code`.
+
 ## Twine
 
 A Mod can be edited in [Twine](https://twinery.org) and brought back. Markdown stays the Mod's source; Twine is only the format it travels in.
@@ -285,13 +289,14 @@ text = plotcanon.interview_instructions(
     path=steps,                                         # the Path walked, or None
     continues_from=stop,                                # from last_stop, or None
     event="e04-second-lantern",                         # or None, for the LLM to ask
+    group="lower door",                                 # "" for the whole Mod, or None to ask
 )
 ```
 
 - **`surface`**: `"cli"` is for pasting into an LLM by hand or using with Claude Code. `"web"` is for an app's own LLM, which is told to give the finished file whole, in one code block, so the app can check it.
 - **`world`**: what the person may read in the World, in any form `load_world` takes. The caller decides what that is. The text holds those documents and their slugs, and nothing else from any World. With a World, the LLM uses its slugs and lists only what is truly new under `## Proposed New Entities`. With none, every Feature gets a made-up slug and is listed there.
 - **`"revise-mod"`** starts the conversation with the send-back reason and each Flag, and keeps the draft's `id`.
-- **`"report"`** gives the LLM the Mod, what its Mod Writer expected to change (`expected_changes`), where the last Stretch stopped, and the Path, which it copies into the report as `path`. The Path proposes `finished`, and the LLM asks the Mod Runner to confirm it. It asks `pcs` and what went off-script, and `ran` only when there is no Path, since a Path walked means the Mod ran. It writes `canon_changes` in the schema's terms. With no Path, it starts by asking the Mod Runner to say in words what happened and where play stopped. With `event`, the report's Event is filled in; with a `world`, so is its `id`, the next free one by the convention (`aa-<mod>`, `aa-<mod>-2`, …) among the reports in it.
+- **`"report"`** gives the LLM the Mod, what its Mod Writer expected to change (`expected_changes`), where the last Stretch stopped, and the Path, which it copies into the report as `path`. The Path proposes `finished`, and the LLM asks the Mod Runner to confirm it. It asks `pcs` and what went off-script, and `ran` only when there is no Path, since a Path walked means the Mod ran. It writes `canon_changes` in the schema's terms. With no Path, it starts by asking the Mod Runner to say in words what happened and where play stopped. With `event`, the report's Event is filled in; with `group`, its Group, or with `""` the LLM leaves `group` out, and with neither it asks whether the players split; with a `world`, so is its `id`, the next free one by the convention (`aa-<mod>`, `aa-<mod>-2`, …) among the reports in it.
 
 Two more texts go with a `"web"` Interview, so an app holds no prompt text of its own:
 

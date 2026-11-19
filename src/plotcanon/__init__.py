@@ -42,6 +42,7 @@ from ._plot_team import (
 )
 from ._story import Contest, Exit, Passage, Section, Story, story
 from ._path import LastStop, Path, check_path, path_steps
+from ._checks import MAX_GROUP_CHARACTERS, PARALLEL_GROUPS_CLASH, group_label
 from ._twine import FromTwine, from_twine, to_twee
 from ._references import Reference, name_of, references, referrers, vocabulary_fields
 from ._api import (
@@ -56,6 +57,7 @@ from ._api import (
     check_file,
     flagged_mods,
     flags,
+    group_of,
     last_stop,
     load_world,
     read_directory,
@@ -78,6 +80,8 @@ __all__ = [
     "Flag",
     "FromTwine",
     "LastStop",
+    "MAX_GROUP_CHARACTERS",
+    "PARALLEL_GROUPS_CLASH",
     "Passage",
     "Path",
     "Report",
@@ -103,6 +107,8 @@ __all__ = [
     "flagged_mods",
     "flags",
     "from_twine",
+    "group_label",
+    "group_of",
     "interview_fix_request",
     "interview_instructions",
     "interview_report_opener",

@@ -350,6 +350,25 @@ class TheGroupField(unittest.TestCase):
                                   "line of at most 60 characters"])
 
 
+class ReadingAGroup(unittest.TestCase):
+    def test_a_label_is_its_text_stripped_and_blank_or_not_text_is_none(self):
+        for value, label in (("  reef  ", "reef"), ("cellar", "cellar"), ("", None),
+                             ("   ", None), (None, None), (2, None), (["cellar"], None)):
+            with self.subTest(value):
+                self.assertEqual(plotcanon.group_label(value), label)
+
+    def test_a_label_is_at_most_sixty_characters(self):
+        self.assertEqual(plotcanon.MAX_GROUP_CHARACTERS, 60)
+
+    def test_a_reports_group_is_read_from_its_document(self):
+        result = loaded((1, report(1, AT_THE_BELL, group="  cellar ", finished="false")))
+        document = next(d for d in result.world.documents if d.id == report_id(1))
+        mod = next(d for d in result.world.documents if d.id == "the-bell-beneath")
+
+        self.assertEqual(plotcanon.group_of(document), "cellar")
+        self.assertIsNone(plotcanon.group_of(mod))
+
+
 def status_change(to, decision="proposed"):
     return (f"{{entity: sister-ane, kind: status, decision: {decision}, from: alive, "
             f"to: {to}, summary: Changed.}}")
@@ -377,6 +396,18 @@ class ChangesInParallel(unittest.TestCase):
             "`aa-the-bell-beneath` does in the Group `cellar`, which played alongside this "
             "one — they are decided in order of report id, so check that they agree",
         ])
+
+    def test_the_warning_carries_a_code_and_no_other_warning_does(self):
+        result = loaded(
+            (1, report(1, group="cellar", changes=status_change("missing"))),
+            (2, report(2, group="belfry", changes=status_change("dead"))))
+
+        clashing = {w.path for w in result.warnings
+                    if w.code == plotcanon.PARALLEL_GROUPS_CLASH}
+        self.assertEqual(clashing, {rel(1), rel(2)})
+        self.assertEqual(plotcanon.PARALLEL_GROUPS_CLASH, "parallel-groups-clash")
+        self.assertTrue(all(w.code is None for w in result.warnings
+                            if "played alongside" not in w.message))
 
     def test_with_three_groups_each_report_is_warned_once(self):
         _, warnings = findings(

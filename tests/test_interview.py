@@ -402,6 +402,36 @@ class Reporting(unittest.TestCase):
         self.assertNotIn("If you do not know which, ask me", " ".join(text.split()))
         self.assertIn("If you do not know which, ask me", " ".join(reporting().split()))
 
+    def test_a_group_given_is_written_so_the_llm_need_not_ask(self):
+        text = reporting(path=SILENCED, event="e04-second-lantern", group=" cellar ")
+        flat = " ".join(text.split())
+
+        self.assertIn("\nevent: e04-second-lantern\ngroup: cellar\n", text)
+        self.assertIn("this report is for my Group, `cellar`", flat)
+        self.assertNotIn("If you do not know whether the players split, ask me", flat)
+
+    def test_no_group_given_says_to_leave_it_out(self):
+        flat = " ".join(reporting(path=SILENCED, group="").split())
+
+        self.assertNotIn("\ngroup:", reporting(path=SILENCED, group=""))
+        self.assertIn("Leave out `group`: this report covers the whole Mod", flat)
+        self.assertNotIn("If you do not know whether the players split, ask me", flat)
+
+    def test_with_the_group_not_given_the_llm_asks_as_before(self):
+        self.assertIn("If you do not know whether the players split, ask me",
+                      " ".join(reporting(path=SILENCED).split()))
+
+    def test_a_group_must_be_a_short_label_on_one_line(self):
+        for group in ("x" * 61, "two\nlines"):
+            with self.subTest(group), self.assertRaises(ValueError):
+                reporting(group=group)
+        with self.assertRaises(TypeError):
+            reporting(group=["cellar"])
+
+    def test_only_a_report_takes_a_group(self):
+        with self.assertRaises(ValueError):
+            plotcanon.interview_instructions("new-mod", "web", group="cellar")
+
     def test_with_a_world_the_reports_id_is_worked_out(self):
         files = plotcanon.sample_world()
         self.assertIn("\nid: aa-the-bell-beneath\n", reporting(world=files))
