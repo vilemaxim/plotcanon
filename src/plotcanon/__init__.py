@@ -42,7 +42,7 @@ from ._plot_team import (
 )
 from ._story import Contest, Exit, Passage, Section, Story, story
 from ._path import LastStop, Path, check_path, path_steps
-from ._checks import MAX_GROUP_CHARACTERS, PARALLEL_GROUPS_CLASH, group_label
+from ._checks import MAX_GROUP_CHARACTERS, PARALLEL_GROUPS_CLASH, group_label, group_label_problem
 from ._twine import FromTwine, from_twine, to_twee
 from ._references import Reference, name_of, references, referrers, vocabulary_fields
 from ._api import (
@@ -108,6 +108,7 @@ __all__ = [
     "flags",
     "from_twine",
     "group_label",
+    "group_label_problem",
     "group_of",
     "interview_fix_request",
     "interview_instructions",

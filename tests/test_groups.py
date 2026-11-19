@@ -333,6 +333,22 @@ class AReportInterviewThatBringsGroupsBackTogether(unittest.TestCase):
                               "for another", text)
 
 
+class AReportInterviewForTheWholeModAfterASplit(unittest.TestCase):
+    def test_it_says_the_players_came_back_together(self):
+        mod = plotcanon.sample_world()[MOD]
+        files = {**plotcanon.sample_world(),
+                 rel(1): report(1, AT_THE_BELL, group="cellar", finished="false")}
+
+        after = " ".join(plotcanon.interview_instructions(
+            "report", "web", world=files, mod=mod, group="").split())
+        never = " ".join(plotcanon.interview_instructions(
+            "report", "web", world=plotcanon.sample_world(), mod=mod, group="").split())
+
+        self.assertIn("The players came back together after splitting into Groups", after)
+        self.assertIn("Leave out `group`", after)
+        self.assertNotIn("came back together", never)
+
+
 class TheGroupField(unittest.TestCase):
     def test_a_group_is_a_short_label(self):
         for value in ("2", "[cellar]", "{a: b}", "''", "' '", "\"two\\nlines\"", "x" * 61):
@@ -356,6 +372,16 @@ class ReadingAGroup(unittest.TestCase):
                              ("   ", None), (None, None), (2, None), (["cellar"], None)):
             with self.subTest(value):
                 self.assertEqual(plotcanon.group_label(value), label)
+
+    def test_a_label_that_will_not_do_says_why_as_the_file_check_does(self):
+        message = ("`group` must be a short label, as text on one line of at most "
+                   "60 characters")
+        for value in ("x" * 61, "two\nlines", "   ", "", 2, ["cellar"], None):
+            with self.subTest(value):
+                self.assertEqual(plotcanon.group_label_problem(value), message)
+        for value in ("cellar", "  reef  ", "x" * 60):
+            with self.subTest(value):
+                self.assertIsNone(plotcanon.group_label_problem(value))
 
     def test_a_label_is_at_most_sixty_characters(self):
         self.assertEqual(plotcanon.MAX_GROUP_CHARACTERS, 60)
@@ -406,8 +432,7 @@ class ChangesInParallel(unittest.TestCase):
                     if w.code == plotcanon.PARALLEL_GROUPS_CLASH}
         self.assertEqual(clashing, {rel(1), rel(2)})
         self.assertEqual(plotcanon.PARALLEL_GROUPS_CLASH, "parallel-groups-clash")
-        self.assertTrue(all(w.code is None for w in result.warnings
-                            if "played alongside" not in w.message))
+        self.assertEqual(len([w for w in result.warnings if w.code is not None]), 2)
 
     def test_with_three_groups_each_report_is_warned_once(self):
         _, warnings = findings(

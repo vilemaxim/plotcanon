@@ -89,7 +89,8 @@ Should a check ever fail in a way none of this foresaw, the caller is still not 
 | `check_path(story, steps, *, continues_from=None)` | A report's `path` read against its Mod's story, as a `Path`: where play stopped, whether that finishes the Mod, and what does not fit. |
 | `last_stop(world, mod, *, before=None, group=None, event=None)` | Where play stopped on a Mod before a report, or after its last one, as a `LastStop`, by the rule `load_world` checks a Path by. With `group`, where that Group stopped; with `event`, for a report at that Event. |
 | `group_of(document)` | The Group an After-Action Report covers, its `group` stripped, or None when it has none or the document is not a report. |
-| `group_label(value)` | A `group` value as a Group's label: its text stripped, or None when it is blank or not text. A valid label is on one line and at most `MAX_GROUP_CHARACTERS` (60) long. |
+| `group_label(value)` | A `group` value as a Group's label: its text stripped, or None when it is blank or not text. |
+| `group_label_problem(value)` | Why a value will not do as a Group's label, in the words the check of a file uses, or None when it will: text, not blank, on one line and at most `MAX_GROUP_CHARACTERS` (60) long. |
 | `to_twee(text)` | A Mod's file as a Twee 3 story, to open in Twine. |
 | `from_twine(source)` | A Twee file or a Twine 2 `.html` file (archive or published) back into a Mod's markdown, as `FromTwine`: the `markdown`, `warnings` about what does nothing in a Dry Run, and `problems` if the file could not be read. Takes text or bytes. |
 | `world_settings(source)` | A World's settings from its `world.yml`, as `WorldSettings`. `world.settings` gives the same for a loaded World. |
@@ -235,7 +236,7 @@ stop = plotcanon.last_stop(world, mod.id)          # after a split: LastStop(amo
 stop.passages                                      # the scenes it may start at
 ```
 
-The warning about two Groups changing the same field has the `code` `PARALLEL_GROUPS_CLASH`, so an app can find it without its wording: `[w for w in report.warnings if w.code == plotcanon.PARALLEL_GROUPS_CLASH]`. Other findings have no `code`.
+Two constants go with these. `MAX_GROUP_CHARACTERS` is the longest a label may be. The warning about two Groups changing the same field has the `code` `PARALLEL_GROUPS_CLASH`, so an app can find it without its wording: `[w for w in report.warnings if w.code == plotcanon.PARALLEL_GROUPS_CLASH]`. Other findings have no `code`.
 
 ## Twine
 
@@ -296,7 +297,7 @@ text = plotcanon.interview_instructions(
 - **`surface`**: `"cli"` is for pasting into an LLM by hand or using with Claude Code. `"web"` is for an app's own LLM, which is told to give the finished file whole, in one code block, so the app can check it.
 - **`world`**: what the person may read in the World, in any form `load_world` takes. The caller decides what that is. The text holds those documents and their slugs, and nothing else from any World. With a World, the LLM uses its slugs and lists only what is truly new under `## Proposed New Entities`. With none, every Feature gets a made-up slug and is listed there.
 - **`"revise-mod"`** starts the conversation with the send-back reason and each Flag, and keeps the draft's `id`.
-- **`"report"`** gives the LLM the Mod, what its Mod Writer expected to change (`expected_changes`), where the last Stretch stopped, and the Path, which it copies into the report as `path`. The Path proposes `finished`, and the LLM asks the Mod Runner to confirm it. It asks `pcs` and what went off-script, and `ran` only when there is no Path, since a Path walked means the Mod ran. It writes `canon_changes` in the schema's terms. With no Path, it starts by asking the Mod Runner to say in words what happened and where play stopped. With `event`, the report's Event is filled in; with `group`, its Group, or with `""` the LLM leaves `group` out, and with neither it asks whether the players split; with a `world`, so is its `id`, the next free one by the convention (`aa-<mod>`, `aa-<mod>-2`, …) among the reports in it.
+- **`"report"`** gives the LLM the Mod, what its Mod Writer expected to change (`expected_changes`), where the last Stretch stopped, and the Path, which it copies into the report as `path`. The Path proposes `finished`, and the LLM asks the Mod Runner to confirm it. It asks `pcs` and what went off-script, and `ran` only when there is no Path, since a Path walked means the Mod ran. It writes `canon_changes` in the schema's terms. With no Path, it starts by asking the Mod Runner to say in words what happened and where play stopped. With `event`, the report's Event is filled in, and with a `world`, so is its `id`, the next free one by the convention (`aa-<mod>`, `aa-<mod>-2`, …) among the reports in it. With `group`, the report is for that Group and `group:` is filled in; with `""` the LLM leaves `group` out, and is told the players came back together when the `world` shows they split before; with None it asks whether they split.
 
 Two more texts go with a `"web"` Interview, so an app holds no prompt text of its own:
 

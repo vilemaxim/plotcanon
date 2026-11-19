@@ -389,11 +389,8 @@ def well_shaped(rel, fm, typ, f):
         fm["id"] = None
 
     group = fm.get("group") if typ == "after-action" else None
-    label = group_label(group)
-    if group is not None and (label is None or "\n" in label
-                              or len(label) > MAX_GROUP_CHARACTERS):
-        wrong("group", f"`group` must be a short label, as text on one line of at most "
-                       f"{MAX_GROUP_CHARACTERS} characters")
+    if group is not None and group_label_problem(group):
+        wrong("group", group_label_problem(group))
         fm["group"] = None
 
     def id_list(field, where, listed):
@@ -848,6 +845,17 @@ def group_label(value):
     is not text or is blank, which is no Group. A label that is valid in a
     file is also on one line and at most `MAX_GROUP_CHARACTERS` long."""
     return (value.strip() or None) if isinstance(value, str) else None
+
+
+def group_label_problem(value):
+    """Why `value` will not do as a Group's label, as the check of a file
+    says it, or None when it will: text, not blank, on one line and at most
+    `MAX_GROUP_CHARACTERS` long once stripped."""
+    label = group_label(value)
+    if label is None or "\n" in label or len(label) > MAX_GROUP_CHARACTERS:
+        return (f"`group` must be a short label, as text on one line of at most "
+                f"{MAX_GROUP_CHARACTERS} characters")
+    return None
 
 
 def group_of(report):

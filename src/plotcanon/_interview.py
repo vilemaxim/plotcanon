@@ -507,7 +507,7 @@ def interview_instructions(kind, surface, *, world=None, draft=None, sent_back_r
     None when there is no earlier report. `event` is the id of the Event the
     Stretch was played at, or None for the LLM to ask. `group` is the label
     of the Group the report is for, when the players split into Groups
-    (ADR-0011 in RPG Plot Helper); "" when it covers the whole Mod, so the
+    (rpg-plot-helper ADR-0011); "" when it covers the whole Mod, so the
     LLM leaves `group` out; or None for the LLM to ask whether they split.
     With `world`, the report's `id` is worked out from the reports in it.
 
@@ -642,6 +642,10 @@ GROUP_GIVEN = """\
 """
 GROUP_NONE = """\
 - Leave out `group`: this report covers the whole Mod.
+"""
+GROUP_REJOINED = """\
+- Leave out `group`. The players came back together after splitting into
+  Groups, and this report covers them all.
 """
 PATH_RULE = """\
 - **`path`** is the Path, copied exactly as it is given at the end of these
@@ -871,15 +875,29 @@ def _report_parts(mod, path, stop):
     return _ReportParts("\n".join(parts), where, walked, mod_id)
 
 
-def _report_id(mod_id, world):
-    """The id of the next report on a Mod, by the convention in
-    `schema/after-action.md`: `aa-<mod>`, then `aa-<mod>-2` and so on, the
-    first that no document in the World has."""
+def _documents(world):
+    """The World's documents, read as the checks read them, and by id."""
     from ._api import _files_of
 
     files = {path: text for path, text in _files_of(world).items()
              if _checks.is_scanned(path)}
-    _docs, by_id, _generated = _checks.collect_docs(files, _checks.Findings())
+    docs, by_id, _generated = _checks.collect_docs(files, _checks.Findings())
+    return docs, by_id
+
+
+def _split_before(mod_id, world):
+    """Whether the Mod's players have split into Groups before: one of its
+    reports in the World has a `group`."""
+    docs, _by_id = _documents(world)
+    return any(doc.type == "after-action" and doc.fm.get("mod") == mod_id
+               and _checks.group_of(doc) for doc in docs)
+
+
+def _report_id(mod_id, world):
+    """The id of the next report on a Mod, by the convention in
+    `schema/after-action.md`: `aa-<mod>`, then `aa-<mod>-2` and so on, the
+    first that no document in the World has."""
+    _docs, by_id = _documents(world)
     report_id, n = f"aa-{mod_id}", 1
     while report_id in by_id:
         n += 1
@@ -893,11 +911,26 @@ def _group_given(group):
         return None
     if not isinstance(group, str):
         raise TypeError("a Group is given by its label, as text")
-    label = _checks.group_label(group) or ""
-    if "\n" in label or len(label) > _checks.MAX_GROUP_CHARACTERS:
-        raise ValueError(f"a Group's label is on one line, of at most "
-                         f"{_checks.MAX_GROUP_CHARACTERS} characters")
-    return label
+    if _checks.group_label(group) is None:
+        return ""
+    problem = _checks.group_label_problem(group)
+    if problem:
+        raise ValueError(problem)
+    return _checks.group_label(group)
+
+
+def _group_rule(group, mod_id, world):
+    """What the LLM is told of `group`: to ask whether the players split
+    (None), that the report is for that Group (a label), or to leave it out
+    (""), saying the players came back together when the World shows they
+    split before."""
+    if group is None:
+        return GROUP_RULE
+    if group:
+        return GROUP_GIVEN.format(group=group)
+    if world is not None and _split_before(mod_id, world):
+        return GROUP_REJOINED
+    return GROUP_NONE
 
 
 def _report(surface, mod, path, stop, event, group, world):
@@ -922,8 +955,7 @@ def _report(surface, mod, path, stop, event, group, world):
         EVENT_ASKED if event is None else EVENT_GIVEN.format(event=event),
         RAN_WALKED if made.walked else RAN_ASKED,
         FINISHED_RULE,
-        GROUP_RULE if group is None else
-        GROUP_GIVEN.format(group=group) if group else GROUP_NONE,
+        _group_rule(group, made.mod_id, world),
         PATH_RULE if made.walked else NO_PATH_RULE,
     ])
     parts = [
